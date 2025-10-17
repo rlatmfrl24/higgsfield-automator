@@ -8,6 +8,11 @@ import {
 
 import type { FormSnapshotPayload } from "../../services/formSnapshot";
 import { updateActiveTabFieldValue } from "../../services/formControl";
+import {
+  GENERATION_BUTTON_KEY_PHRASE,
+  triggerImageGeneration,
+} from "../../services/generation";
+import { useLiveRegion } from "../../hooks/useLiveRegion";
 
 type TargetScreenProps = {
   isReadingForm: boolean;
@@ -28,6 +33,24 @@ type DerivedFormData = {
   quality?: FieldSelection;
   figures: string[];
   datasetValues: Record<string, string>;
+};
+
+const HIGHLIGHT_PATTERN = /Generate(\d+)\s*Daily free credits left/i;
+
+const extractHighlightFromText = (text: string) => {
+  const match = text.match(HIGHLIGHT_PATTERN);
+
+  if (!match) {
+    return null;
+  }
+
+  const amount = match[1];
+
+  return {
+    amount,
+    display: `남은 크레딧: ${amount}`,
+    raw: text,
+  } as const;
 };
 
 type DatasetDisplayConfig = {
@@ -186,6 +209,40 @@ export const TargetScreen = ({
   const [qualityValue, setQualityValue] = useState("");
   const [controlError, setControlError] = useState<string | null>(null);
   const [isApplying, setIsApplying] = useState(false);
+  const [isConfirming, setIsConfirming] = useState(false);
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [generationError, setGenerationError] = useState<string | null>(null);
+  const announce = useLiveRegion();
+  const highlightInfo = useMemo(() => {
+    if (!derived) {
+      return null;
+    }
+
+    for (const text of derived.figures) {
+      const result = extractHighlightFromText(text);
+      if (result) {
+        return result;
+      }
+    }
+
+    return null;
+  }, [derived]);
+  const ratioOptions = useMemo(() => {
+    const options = derived?.ratio?.options;
+    if (!options) {
+      return [];
+    }
+
+    return options.filter((option) => option.value?.trim() !== "");
+  }, [derived?.ratio?.options]);
+  const qualityOptions = useMemo(() => {
+    const options = derived?.quality?.options;
+    if (!options) {
+      return [];
+    }
+
+    return options.filter((option) => option.value?.trim() !== "");
+  }, [derived?.quality?.options]);
 
   useEffect(() => {
     if (!derived) {
@@ -199,14 +256,16 @@ export const TargetScreen = ({
       setPromptValue(derived.prompt.value);
     }
 
-    if (derived.ratio) {
-      setRatioValue(derived.ratio.value);
-    }
+    const nextRatioValue = derived?.ratio?.value?.trim()
+      ? derived?.ratio?.value ?? ""
+      : ratioOptions[0]?.value ?? "";
+    setRatioValue(nextRatioValue);
 
-    if (derived.quality) {
-      setQualityValue(derived.quality.value);
-    }
-  }, [derived]);
+    const nextQualityValue = derived?.quality?.value?.trim()
+      ? derived?.quality?.value ?? ""
+      : qualityOptions[0]?.value ?? "";
+    setQualityValue(nextQualityValue);
+  }, [derived, ratioOptions, qualityOptions]);
 
   const applyFieldValue = useCallback(
     async (selection: FieldSelection | undefined, value: string) => {
@@ -264,6 +323,41 @@ export const TargetScreen = ({
     [applyFieldValue, derived?.quality]
   );
 
+  const handleRequestGeneration = useCallback(() => {
+    setGenerationError(null);
+    setIsConfirming(true);
+
+    if (highlightInfo) {
+      announce(
+        `${highlightInfo.display} - 이미지 생성 버튼을 누르려면 동의가 필요합니다.`
+      );
+    }
+  }, [announce, highlightInfo]);
+
+  const handleCancelGeneration = useCallback(() => {
+    setIsConfirming(false);
+  }, []);
+
+  const handleConfirmGeneration = useCallback(async () => {
+    setIsGenerating(true);
+    setGenerationError(null);
+
+    try {
+      await triggerImageGeneration();
+      announce("이미지 생성 요청을 전송했습니다.");
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "이미지 생성 요청에 실패했습니다.";
+      setGenerationError(message);
+      announce(message);
+    } finally {
+      setIsGenerating(false);
+      setIsConfirming(false);
+    }
+  }, [announce]);
+
   return (
     <div className="flex flex-col items-center gap-6 min-h-screen w-full bg-slate-50 text-slate-800 px-6 py-12">
       <div className="rounded-xl border border-green-200 bg-green-50 px-6 py-4 text-center shadow-sm">
@@ -298,21 +392,29 @@ export const TargetScreen = ({
               ) : null}
             </div>
 
-            <div className="p-6 space-y-6">
-              <div>
+            <div className="p-6 space-y-6" aria-live="polite">
+              <div className="space-y-3">
                 <h2 className="text-sm font-semibold text-slate-700">
                   표시 정보
                 </h2>
-                <div className="mt-3 flex flex-wrap gap-2">
+                <div className="flex flex-wrap gap-2">
                   {derived.figures.length ? (
-                    derived.figures.map((text) => (
-                      <span
-                        key={text}
-                        className="inline-flex items-center rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700"
-                      >
-                        {text}
-                      </span>
-                    ))
+                    derived.figures.map((text) => {
+                      const info = extractHighlightFromText(text);
+
+                      return (
+                        <span
+                          key={text}
+                          className={
+                            info
+                              ? "inline-flex items-center rounded-full border border-amber-400 bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700 shadow-sm"
+                              : "inline-flex items-center rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700"
+                          }
+                        >
+                          {info?.display ?? text}
+                        </span>
+                      );
+                    })
                   ) : (
                     <span className="text-xs text-slate-500">
                       표시할 정보를 찾지 못했습니다.
@@ -344,13 +446,13 @@ export const TargetScreen = ({
                       className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500"
                       value={ratioValue}
                       onChange={handleRatioChange}
-                      disabled={!derived.ratio}
+                      disabled={!ratioOptions.length}
                     >
-                      {derived.ratio?.options?.map((option) => (
+                      {ratioOptions.map((option) => (
                         <option key={option.value} value={option.value}>
                           {option.label}
                         </option>
-                      )) ?? <option value="">선택 불가</option>}
+                      ))}
                     </select>
                   </label>
 
@@ -362,13 +464,13 @@ export const TargetScreen = ({
                       className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500"
                       value={qualityValue}
                       onChange={handleQualityChange}
-                      disabled={!derived.quality}
+                      disabled={!qualityOptions.length}
                     >
-                      {derived.quality?.options?.map((option) => (
+                      {qualityOptions.map((option) => (
                         <option key={option.value} value={option.value}>
                           {option.label}
                         </option>
-                      )) ?? <option value="">선택 불가</option>}
+                      ))}
                     </select>
                   </label>
                 </div>
@@ -377,6 +479,56 @@ export const TargetScreen = ({
               {controlError ? (
                 <p className="text-xs text-red-600">{controlError}</p>
               ) : null}
+
+              <div className="space-y-3 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="space-y-1">
+                    <p className="text-sm font-semibold text-emerald-800">
+                      이미지 생성
+                    </p>
+                    <p className="text-xs text-emerald-700">
+                      {highlightInfo
+                        ? highlightInfo.display
+                        : `버튼 텍스트에 "${GENERATION_BUTTON_KEY_PHRASE}" 문구가 포함된 버튼을 찾아 클릭합니다.`}
+                    </p>
+                  </div>
+                  <button
+                    className="shrink-0 rounded-lg bg-emerald-600 px-4 py-2 text-xs font-semibold text-white shadow transition hover:bg-emerald-500 active:bg-emerald-700 disabled:bg-emerald-300"
+                    onClick={handleRequestGeneration}
+                    disabled={isApplying || isGenerating}
+                  >
+                    {isGenerating ? "요청 중..." : "이미지 생성 요청"}
+                  </button>
+                </div>
+
+                {isConfirming ? (
+                  <div className="space-y-2 rounded-md border border-amber-300 bg-white px-3 py-2 text-xs text-slate-700">
+                    <p className="font-semibold text-amber-700">
+                      하루 무료 크레딧이 차감됩니다. 계속 진행할까요?
+                    </p>
+                    <div className="flex gap-2">
+                      <button
+                        className="rounded border border-amber-400 bg-amber-50 px-3 py-1 font-semibold text-amber-700 hover:bg-amber-100"
+                        onClick={handleConfirmGeneration}
+                        disabled={isGenerating}
+                      >
+                        동의하고 진행
+                      </button>
+                      <button
+                        className="rounded border border-slate-200 bg-white px-3 py-1 font-semibold text-slate-600 hover:bg-slate-100"
+                        onClick={handleCancelGeneration}
+                        disabled={isGenerating}
+                      >
+                        취소
+                      </button>
+                    </div>
+                  </div>
+                ) : null}
+
+                {generationError ? (
+                  <p className="text-xs text-red-600">{generationError}</p>
+                ) : null}
+              </div>
 
               <details className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-600">
                 <summary className="cursor-pointer select-none text-sm font-semibold text-slate-700">
