@@ -13,7 +13,7 @@ export const TargetScreen = ({
   formPayload,
   onReadForm,
 }: TargetScreenProps) => (
-  <div className="flex flex-col items-center justify-center gap-4 h-screen w-screen bg-slate-50 text-slate-800 px-6 py-12">
+  <div className="flex flex-col items-center gap-6 min-h-screen w-full bg-slate-50 text-slate-800 px-6 py-12">
     <div className="rounded-xl border border-green-200 bg-green-50 px-6 py-4 text-center shadow-sm">
       <h1 className="text-2xl font-bold text-green-700">
         타겟 페이지에 도달했습니다!
@@ -37,24 +37,28 @@ export const TargetScreen = ({
     ) : null}
 
     {formPayload ? (
-      <div className="w-full max-w-2xl mt-4">
-        <div className="rounded-lg border border-slate-200 bg-white shadow-sm overflow-hidden">
+      <div className="w-full mt-2">
+        <div className="rounded-lg border border-slate-200 bg-white shadow-sm max-w-6xl mx-auto w-full">
           <div className="border-b border-slate-200 bg-slate-100 px-4 py-2 text-left text-sm font-semibold text-slate-700">
             폼 스냅샷
           </div>
-          <div className="p-4">
-            <h2 className="text-sm font-semibold text-slate-700">값</h2>
-            <div className="mt-2 rounded bg-slate-900 text-slate-100 text-xs">
-              <pre className="max-h-72 overflow-auto whitespace-pre-wrap break-words px-3 py-2 font-mono">
-                {JSON.stringify(formPayload.values, null, 2)}
-              </pre>
+          <div className="p-4 space-y-6 max-h-[calc(100vh-20rem)] overflow-y-auto overflow-x-hidden">
+            <div>
+              <h2 className="text-sm font-semibold text-slate-700">값</h2>
+              <div className="mt-2 rounded bg-slate-900 text-slate-100 text-xs">
+                <pre className="max-h-72 overflow-y-auto overflow-x-hidden whitespace-pre-wrap break-words px-3 py-2 font-mono">
+                  {JSON.stringify(formPayload.values, null, 2)}
+                </pre>
+              </div>
             </div>
 
-            <h2 className="mt-4 text-sm font-semibold text-slate-700">필드</h2>
-            <div className="mt-2 rounded bg-slate-900 text-slate-100 text-xs">
-              <pre className="max-h-72 overflow-auto whitespace-pre-wrap break-words px-3 py-2 font-mono">
-                {JSON.stringify(formPayload.fields, null, 2)}
-              </pre>
+            <div>
+              <h2 className="text-sm font-semibold text-slate-700">필드</h2>
+              <div className="mt-2 rounded bg-slate-900 text-slate-100 text-xs">
+                <pre className="max-h-72 overflow-y-auto overflow-x-hidden whitespace-pre-wrap break-words px-3 py-2 font-mono">
+                  {JSON.stringify(formPayload.fields, null, 2)}
+                </pre>
+              </div>
             </div>
           </div>
         </div>
