@@ -1,8 +1,30 @@
+import CheckingScreen from "./components/screens/CheckingScreen";
+import OffTargetScreen from "./components/screens/OffTargetScreen";
+import TargetScreen from "./components/screens/TargetScreen";
+import { useActiveTargetPage } from "./hooks/useActiveTargetPage";
+import { useFormSnapshot } from "./hooks/useFormSnapshot";
+
 function App() {
+  const { isTargetPage, isChecking, moveToTargetPage } = useActiveTargetPage();
+  const { payload, error, isReading, readSnapshot } = useFormSnapshot();
+
+  if (isChecking) {
+    return <CheckingScreen />;
+  }
+
+  if (!isTargetPage) {
+    return (
+      <OffTargetScreen isBusy={isChecking} onNavigate={moveToTargetPage} />
+    );
+  }
+
   return (
-    <div className="flex flex-col items-center justify-center h-screen w-screen">
-      <h1 className="text-3xl font-bold underline">Hello World</h1>
-    </div>
+    <TargetScreen
+      isReadingForm={isReading}
+      formReadError={error}
+      formPayload={payload}
+      onReadForm={readSnapshot}
+    />
   );
 }
 

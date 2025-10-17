@@ -1,0 +1,15 @@
+{
+  "manifest_version": 3,
+  "name": "Higgsfield Automator",
+  "description": "Higgsfield 이미지 생성 워크플로를 자동화하는 크롬 익스텐션입니다.",
+  "version": "0.1.0",
+  "action": {
+    "default_popup": "index.html",
+    "default_title": "Higgsfield Automator"
+  },
+  "permissions": ["storage", "scripting", "tabs"],
+  "host_permissions": [
+    "https://*.higgsfield.ai/*",
+    "https://*.higgsfield.com/*"
+  ]
+}
