@@ -1,0 +1,13 @@
+---
+alwaysApply: true
+rules:
+  - name: Tailwind CSS
+    description: Use Tailwind CSS for styling
+    howToFollow:
+      - Use the `@tailwind` directive to import Tailwind CSS
+      - Use the `@apply` directive to apply Tailwind CSS classes
+      - Use the `@layer` directive to group Tailwind CSS classes
+      - Use the `@screen` directive to apply Tailwind CSS classes at different screen sizes
+      - Use the `@variants` directive to apply Tailwind CSS classes at different variants
+      - Use the `@responsive` directive to apply Tailwind CSS classes at different responsive breakpoints
+---

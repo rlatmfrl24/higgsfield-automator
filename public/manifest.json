@@ -1,0 +1,29 @@
+{
+  "manifest_version": 3,
+  "name": "Higgsfield Automator",
+  "description": "Higgsfield 이미지 생성 워크플로를 자동화하는 크롬 익스텐션입니다.",
+  "version": "0.1.0",
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "action": {
+    "default_popup": "index.html",
+    "default_title": "Higgsfield Automator"
+  },
+  "permissions": ["storage", "scripting", "tabs", "alarms"],
+  "content_scripts": [
+    {
+      "matches": [
+        "https://higgsfield.ai/image/soul*",
+        "https://*.higgsfield.ai/image/soul*"
+      ],
+      "js": ["content-feed-monitor.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "host_permissions": [
+    "https://*.higgsfield.ai/*",
+    "https://*.higgsfield.com/*"
+  ]
+}
