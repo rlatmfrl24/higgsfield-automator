@@ -1,10 +1,12 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useState, useEffect } from "react";
 
 import type { FormSnapshotPayload } from "../../services/formSnapshot";
 import { updateActiveTabFieldValue } from "../../services/formControl";
 import { useLiveRegion } from "../../hooks/useLiveRegion";
 import { HighlightBadges } from "./target/HighlightBadges";
 import { GenerationPanel } from "./target/GenerationPanel";
+import { AutomationPanel } from "./target/automation/AutomationPanel";
+import { useAutomationState } from "../../hooks/useAutomationState";
 import {
   deriveFormData,
   extractHighlightFromText,
@@ -14,7 +16,11 @@ import {
   buildSuccessAnnouncement,
   SUCCESS_PREPARATION_MESSAGE,
 } from "./target/messages";
-import { hasNonEmptyString } from "./target/multiPrompt";
+import {
+  createMultiPromptEntry,
+  hasNonEmptyString,
+  isPositiveIntegerString,
+} from "./target/multiPrompt";
 import { MultiPromptTable } from "./target/MultiPromptTable";
 import { useMultiPromptState } from "./target/useMultiPromptState";
 import {
@@ -49,11 +55,65 @@ export const TargetScreen = ({
     canAddMore,
   } = useMultiPromptState(derived?.ratio);
 
+  useEffect(() => {
+    if (!derived) {
+      return;
+    }
+
+    if (entries.length === 0) {
+      const initialCount = Math.max(2, entries.length);
+      const nextEntries = Array.from({ length: initialCount }).map(() =>
+        createMultiPromptEntry(derived.ratio?.value ?? "")
+      );
+      setEntries(nextEntries);
+    }
+  }, [derived, entries.length, setEntries]);
+
   const [isConfirming, setIsConfirming] = useState(false);
   const [generationError, setGenerationError] = useState<string | null>(null);
   const [preparationMessage, setPreparationMessage] = useState<string | null>(
     null
   );
+
+  const {
+    state: automationState,
+    error: automationError,
+    start: startAutomationLoop,
+    pause: pauseAutomationLoop,
+    resume: resumeAutomationLoop,
+    stop: stopAutomationLoop,
+  } = useAutomationState();
+
+  const automationQueue = useMemo(() => {
+    return entries
+      .filter((entry) => hasNonEmptyString(entry.prompt))
+      .flatMap((entry) => {
+        const countValue = isPositiveIntegerString(entry.count)
+          ? Number.parseInt(entry.count, 10)
+          : 0;
+
+        if (countValue <= 0) {
+          return [];
+        }
+
+        return Array.from({ length: countValue }).map(() => ({
+          prompt: entry.prompt.trim(),
+          ratio: entry.ratio?.trim() || null,
+        }));
+      });
+  }, [entries]);
+
+  const buildAutomationPayload = useCallback(() => {
+    return {
+      queue: automationQueue,
+      promptFieldIndex: derived?.prompt?.fieldIndex ?? -1,
+      ratioFieldIndex: derived?.ratio?.fieldIndex ?? null,
+    };
+  }, [
+    automationQueue,
+    derived?.prompt?.fieldIndex,
+    derived?.ratio?.fieldIndex,
+  ]);
 
   const highlightInfo = useMemo(() => {
     if (!derived) {
@@ -156,7 +216,23 @@ export const TargetScreen = ({
       return;
     }
 
-    setEntries([firstPrompt, ...rest]);
+    if (!derived?.prompt?.value || !hasNonEmptyString(derived.prompt.value)) {
+      setEntries((prev) => {
+        const normalised = prev.map((entry, index) =>
+          index === 0
+            ? {
+                ...entry,
+                prompt: entry.prompt || firstPrompt.prompt,
+                ratio: entry.ratio || firstPrompt.ratio,
+              }
+            : entry
+        );
+
+        return normalised;
+      });
+    } else {
+      setEntries([firstPrompt, ...rest]);
+    }
 
     setPreparationMessage(SUCCESS_PREPARATION_MESSAGE);
     announce(buildSuccessAnnouncement(highlightInfo));
@@ -175,9 +251,27 @@ export const TargetScreen = ({
     setIsConfirming(false);
   }, []);
 
-  const handleConfirmGeneration = useCallback(() => {
-    setIsConfirming(false);
-  }, []);
+  const handleConfirmGeneration = useCallback(async () => {
+    try {
+      const payload = buildAutomationPayload();
+
+      if (!payload.queue.length) {
+        throw new Error("자동화할 프롬프트가 없습니다.");
+      }
+
+      setIsConfirming(false);
+      await startAutomationLoop(payload);
+      setPreparationMessage(
+        `자동 생성 루프를 시작했습니다. 총 ${payload.queue.length}회의 생성이 예약되었습니다.`
+      );
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "자동화 시작 중 오류가 발생했습니다.";
+      failPreparation(message);
+    }
+  }, [buildAutomationPayload, failPreparation, startAutomationLoop]);
 
   const handleAddPrompt = useCallback(() => {
     resetMessages();
@@ -272,6 +366,15 @@ export const TargetScreen = ({
                 onConfirm={handleConfirmGeneration}
                 onCancel={handleCancelGeneration}
                 errorMessage={generationError}
+              />
+
+              <AutomationPanel
+                state={automationState}
+                errorMessage={automationError}
+                onPause={pauseAutomationLoop}
+                onResume={resumeAutomationLoop}
+                onStop={stopAutomationLoop}
+                plannedCount={automationQueue.length}
               />
 
               <details className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-600">

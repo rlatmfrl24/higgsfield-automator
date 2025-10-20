@@ -25,13 +25,25 @@ export const validatePreparation = ({
   }
 
   const { prompt, ratio, quality } = derived;
+  const firstEntry = entries[0];
+
+  const hasFirstPrompt = firstEntry
+    ? hasNonEmptyString(firstEntry.prompt)
+    : false;
+  const hasFirstRatio = firstEntry
+    ? hasNonEmptyString(firstEntry.ratio)
+    : false;
 
   if (!prompt || !hasNonEmptyString(prompt.value)) {
-    return { ok: false, message: "기본 프롬프트 입력을 확인해주세요." };
+    if (!hasFirstPrompt) {
+      return { ok: false, message: "기본 프롬프트 입력을 확인해주세요." };
+    }
   }
 
   if (!ratio || !hasNonEmptyString(ratio.value)) {
-    return { ok: false, message: "기본 비율 입력을 확인해주세요." };
+    if (!hasFirstRatio) {
+      return { ok: false, message: "기본 비율 입력을 확인해주세요." };
+    }
   }
 
   if (!quality || !hasNonEmptyString(quality.value)) {

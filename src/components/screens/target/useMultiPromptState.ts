@@ -8,6 +8,7 @@ import {
 import type { MultiPromptEntry } from "./multiPrompt";
 
 const MAX_PROMPT_ROW = 6;
+const DEFAULT_PROMPT_ROWS = 2;
 
 export type UseMultiPromptStateResult = {
   ratioValue: string;
@@ -23,6 +24,7 @@ export type UseMultiPromptStateResult = {
     update: Partial<Pick<MultiPromptEntry, "prompt" | "ratio" | "count">>
   ) => void;
   canAddMore: boolean;
+  addInitialRows: (count: number) => void;
 };
 
 const filterRatioOptions = (options: FieldSelection["options"] | undefined) => {
@@ -62,7 +64,7 @@ export const useMultiPromptState = (
 ): UseMultiPromptStateResult => {
   const [ratioValue, setRatioValue] = useState("");
   const [entries, setEntries] = useState<MultiPromptEntry[]>(() =>
-    createEmptyMultiPromptEntries("")
+    createEmptyMultiPromptEntries("").slice(0, DEFAULT_PROMPT_ROWS)
   );
 
   const ratioOptions = useMemo(
@@ -152,6 +154,25 @@ export const useMultiPromptState = (
     [ratioValue, ratioOptions]
   );
 
+  const addInitialRows = useCallback(
+    (count: number) => {
+      setEntries((prev) => {
+        if (prev.length >= count) {
+          return prev;
+        }
+
+        const rowsToAdd = count - prev.length;
+
+        const newEntries = Array.from({ length: rowsToAdd }).map(() =>
+          createMultiPromptEntry(ratioValue)
+        );
+
+        return [...prev, ...newEntries].slice(0, MAX_PROMPT_ROW);
+      });
+    },
+    [ratioValue]
+  );
+
   return {
     ratioValue,
     ratioOptions,
@@ -162,6 +183,7 @@ export const useMultiPromptState = (
     addEntry,
     removeEntry,
     updateEntry,
+    addInitialRows,
     canAddMore: entries.length < MAX_PROMPT_ROW,
   };
 };
