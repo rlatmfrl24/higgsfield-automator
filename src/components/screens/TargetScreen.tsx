@@ -363,20 +363,43 @@ export const TargetScreen = ({
       ? Math.min(100, Math.round((processedCount / totalCount) * 100))
       : 0;
 
+    const stateQueue = automationState.queue ?? [];
+    const hasStateQueue = stateQueue.length > 0;
+    const stateCurrentPrompt =
+      hasStateQueue &&
+      automationState.cursor >= 0 &&
+      automationState.cursor < stateQueue.length
+        ? stateQueue[automationState.cursor]?.prompt ?? null
+        : null;
+    const stateNextPrompt =
+      hasStateQueue && automationState.cursor + 1 < stateQueue.length
+        ? stateQueue[automationState.cursor + 1]?.prompt ?? null
+        : null;
+
+    const plannedCurrentPrompt = automationQueue[0]?.prompt ?? null;
+    const plannedNextPrompt =
+      automationQueue.length > 1 ? automationQueue[1]?.prompt ?? null : null;
+
+    const currentPrompt =
+      status === "idle"
+        ? plannedCurrentPrompt
+        : stateCurrentPrompt ?? plannedCurrentPrompt;
     const nextPrompt =
-      automationState.queue?.[automationState.cursor]?.prompt ??
-      automationQueue[0]?.prompt ??
-      null;
+      status === "idle"
+        ? plannedNextPrompt
+        : stateNextPrompt ?? plannedNextPrompt;
 
     return {
       ...meta,
       totalCount,
       processedCount,
       progressPercent,
+      currentPrompt,
       nextPrompt,
       nextRetryAt: formatTimeLabel(automationState.nextRetryAt),
     };
   }, [
+    automationQueue,
     automationState.cursor,
     automationState.maxCount,
     automationState.nextRetryAt,
@@ -384,12 +407,13 @@ export const TargetScreen = ({
     automationState.queue,
     automationState.status,
     formatTimeLabel,
-    automationQueue,
   ]);
 
   const handleRefreshAutomation = useCallback(() => {
     void refreshAutomationState();
   }, [refreshAutomationState]);
+
+  const isAutomationRunning = automationState.status === "running";
 
   return (
     <div className="flex flex-col items-center gap-6 min-h-screen w-full bg-slate-50 text-slate-800 px-4 py-10 sm:px-6">
@@ -443,43 +467,45 @@ export const TargetScreen = ({
                     datasetValues={derived.datasetValues}
                   />
 
-                  <MultiPromptTable
-                    entries={entries}
-                    selectOptions={selectOptions}
-                    onChangePrompt={handleChangePrompt}
-                    onChangeRatio={handleChangeRatio}
-                    onChangeCount={handleChangeCount}
-                    onRemove={handleRemovePrompt}
-                    onAdd={handleAddPrompt}
-                    disabledAdd={!canAddMore}
-                  />
-
-                  <details className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-600">
-                    <summary className="cursor-pointer select-none text-sm font-semibold text-slate-700">
-                      원본 폼 데이터
-                    </summary>
-                    <div className="mt-3 space-y-4">
-                      <div>
-                        <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                          values
-                        </h3>
-                        <pre className="mt-1 max-h-48 overflow-y-auto whitespace-pre-wrap break-words rounded bg-slate-900 px-3 py-2 font-mono text-[11px] text-slate-100">
-                          {JSON.stringify(formPayload?.values ?? {}, null, 2)}
-                        </pre>
-                      </div>
-                      <div>
-                        <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                          fields
-                        </h3>
-                        <pre className="mt-1 max-h-48 overflow-y-auto whitespace-pre-wrap break-words rounded bg-slate-900 px-3 py-2 font-mono text-[11px] text-slate-100">
-                          {JSON.stringify(formPayload?.fields ?? [], null, 2)}
-                        </pre>
-                      </div>
+                  {isAutomationRunning ? (
+                    <div className="rounded-lg border border-slate-200 bg-slate-100 px-4 py-6 text-center text-sm text-slate-600">
+                      자동 생성 루프가 실행 중입니다. 자동화가 종료되면 멀티
+                      프롬프트 입력 폼이 다시 표시됩니다.
                     </div>
-                  </details>
+                  ) : (
+                    <MultiPromptTable
+                      entries={entries}
+                      selectOptions={selectOptions}
+                      onChangePrompt={handleChangePrompt}
+                      onChangeRatio={handleChangeRatio}
+                      onChangeCount={handleChangeCount}
+                      onRemove={handleRemovePrompt}
+                      onAdd={handleAddPrompt}
+                      disabledAdd={!canAddMore}
+                    />
+                  )}
                 </section>
 
                 <aside className="space-y-6">
+                  <section className="space-y-4 rounded-lg border border-emerald-200 bg-emerald-50 px-5 py-6 shadow-sm">
+                    <div className="space-y-2">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-emerald-600">
+                        현재 진행 중
+                      </p>
+                      <p className="text-lg font-semibold text-emerald-900 break-words">
+                        {automationStatusMeta.currentPrompt ?? "-"}
+                      </p>
+                    </div>
+                    <div className="space-y-2">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-emerald-600">
+                        다음 예정
+                      </p>
+                      <p className="text-base font-semibold text-emerald-800 break-words">
+                        {automationStatusMeta.nextPrompt ?? "-"}
+                      </p>
+                    </div>
+                  </section>
+
                   <section className="space-y-4 rounded-lg border border-slate-200 bg-white px-4 py-3 shadow-sm">
                     <div className="flex items-start justify-between gap-3">
                       <div className="space-y-1">

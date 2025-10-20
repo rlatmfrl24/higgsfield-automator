@@ -95,10 +95,6 @@ export const MultiPromptTable = ({
         <p className="text-xs text-slate-500">
           최소 1개, 최대 6개의 프롬프트를 설정할 수 있습니다.
         </p>
-        <div className="flex items-center gap-3 text-[11px] text-slate-400">
-          <span>프롬프트 길이를 넉넉히 확보했습니다.</span>
-          <span>비율·횟수 입력은 최소 크기로 유지됩니다.</span>
-        </div>
       </div>
     </div>
   </div>

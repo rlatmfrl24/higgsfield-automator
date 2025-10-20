@@ -7,7 +7,7 @@ import {
 } from "./multiPrompt";
 import type { MultiPromptEntry } from "./multiPrompt";
 
-const MAX_PROMPT_ROW = 6;
+const MAX_PROMPT_ROW = 10;
 const DEFAULT_PROMPT_ROWS = 2;
 
 export type UseMultiPromptStateResult = {
