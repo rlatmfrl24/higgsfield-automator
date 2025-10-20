@@ -82,6 +82,8 @@ export const TargetScreen = ({
     pause: pauseAutomationLoop,
     resume: resumeAutomationLoop,
     stop: stopAutomationLoop,
+    isLoading: isAutomationLoading,
+    refresh: refreshAutomationState,
   } = useAutomationState();
 
   const automationQueue = useMemo(() => {
@@ -310,8 +312,87 @@ export const TargetScreen = ({
     [resetMessages, updateEntry]
   );
 
+  const formatTimeLabel = useCallback((timestamp: number | null) => {
+    if (!timestamp) {
+      return "-";
+    }
+
+    try {
+      return new Date(timestamp).toLocaleTimeString();
+    } catch (error) {
+      console.warn("Failed to format time", error);
+      return "-";
+    }
+  }, []);
+
+  const automationStatusMeta = useMemo(() => {
+    const status = automationState.status;
+    const statusMap: Record<
+      typeof status,
+      {
+        label: string;
+        description: string;
+        badgeClass: string;
+        dotClass: string;
+      }
+    > = {
+      running: {
+        label: "진행 중",
+        description: "자동 생성 루프가 실행되고 있습니다.",
+        badgeClass: "bg-emerald-100 text-emerald-700",
+        dotClass: "bg-emerald-500",
+      },
+      paused: {
+        label: "일시중단",
+        description: "자동 생성 루프가 일시중단 상태입니다.",
+        badgeClass: "bg-amber-100 text-amber-700",
+        dotClass: "bg-amber-500",
+      },
+      idle: {
+        label: "대기 중",
+        description: "자동화를 시작하면 상태가 갱신됩니다.",
+        badgeClass: "bg-slate-200 text-slate-700",
+        dotClass: "bg-slate-500",
+      },
+    };
+
+    const meta = statusMap[status];
+    const totalCount = automationState.maxCount || automationQueue.length;
+    const processedCount = automationState.processedCount;
+    const progressPercent = totalCount
+      ? Math.min(100, Math.round((processedCount / totalCount) * 100))
+      : 0;
+
+    const nextPrompt =
+      automationState.queue?.[automationState.cursor]?.prompt ??
+      automationQueue[0]?.prompt ??
+      null;
+
+    return {
+      ...meta,
+      totalCount,
+      processedCount,
+      progressPercent,
+      nextPrompt,
+      nextRetryAt: formatTimeLabel(automationState.nextRetryAt),
+    };
+  }, [
+    automationState.cursor,
+    automationState.maxCount,
+    automationState.nextRetryAt,
+    automationState.processedCount,
+    automationState.queue,
+    automationState.status,
+    formatTimeLabel,
+    automationQueue,
+  ]);
+
+  const handleRefreshAutomation = useCallback(() => {
+    void refreshAutomationState();
+  }, [refreshAutomationState]);
+
   return (
-    <div className="flex flex-col items-center gap-6 min-h-screen w-full bg-slate-50 text-slate-800 px-6 py-12">
+    <div className="flex flex-col items-center gap-6 min-h-screen w-full bg-slate-50 text-slate-800 px-4 py-10 sm:px-6">
       <div className="rounded-xl border border-green-200 bg-green-50 px-6 py-4 text-center shadow-sm">
         <h1 className="text-2xl font-bold text-green-700">
           타겟 페이지에 도달했습니다!
@@ -322,13 +403,26 @@ export const TargetScreen = ({
         </p>
       </div>
 
-      <button
-        className="rounded-lg bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white font-semibold px-6 py-3 transition-colors disabled:bg-emerald-300"
-        onClick={onReadForm}
-        disabled={isReadingForm}
-      >
-        {isReadingForm ? "폼 데이터 읽는 중..." : "폼 데이터 화면 출력"}
-      </button>
+      <div className="flex flex-wrap items-center justify-center gap-3">
+        <button
+          className="rounded-lg bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white font-semibold px-6 py-3 transition-colors disabled:bg-emerald-300"
+          onClick={onReadForm}
+          disabled={isReadingForm}
+          type="button"
+        >
+          {isReadingForm ? "폼 데이터 읽는 중..." : "폼 데이터 화면 출력"}
+        </button>
+        <button
+          className="rounded-lg border border-slate-300 bg-white px-5 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-100 disabled:border-slate-200 disabled:text-slate-400"
+          onClick={handleRefreshAutomation}
+          disabled={isAutomationLoading}
+          type="button"
+        >
+          {isAutomationLoading
+            ? "자동화 상태 동기화 중..."
+            : "자동화 상태 새로고침"}
+        </button>
+      </div>
 
       {formReadError ? (
         <p className="text-sm text-red-600">{formReadError}</p>
@@ -341,65 +435,145 @@ export const TargetScreen = ({
               <span>폼 제어 패널</span>
             </div>
 
-            <div className="p-6 space-y-6" aria-live="polite">
-              <HighlightBadges
-                figures={derived.figures}
-                datasetValues={derived.datasetValues}
-              />
+            <div className="p-6 space-y-8" aria-live="polite">
+              <div className="grid gap-6 xl:grid-cols-[2fr_1fr] xl:items-start">
+                <section className="space-y-6">
+                  <HighlightBadges
+                    figures={derived.figures}
+                    datasetValues={derived.datasetValues}
+                  />
 
-              <MultiPromptTable
-                entries={entries}
-                selectOptions={selectOptions}
-                onChangePrompt={handleChangePrompt}
-                onChangeRatio={handleChangeRatio}
-                onChangeCount={handleChangeCount}
-                onRemove={handleRemovePrompt}
-                onAdd={handleAddPrompt}
-                disabledAdd={!canAddMore}
-              />
+                  <MultiPromptTable
+                    entries={entries}
+                    selectOptions={selectOptions}
+                    onChangePrompt={handleChangePrompt}
+                    onChangeRatio={handleChangeRatio}
+                    onChangeCount={handleChangeCount}
+                    onRemove={handleRemovePrompt}
+                    onAdd={handleAddPrompt}
+                    disabledAdd={!canAddMore}
+                  />
 
-              <GenerationPanel
-                onPrepare={handleRequestGeneration}
-                highlightInfo={highlightInfo}
-                preparationMessage={preparationMessage}
-                isConfirming={isConfirming}
-                onConfirm={handleConfirmGeneration}
-                onCancel={handleCancelGeneration}
-                errorMessage={generationError}
-              />
+                  <details className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-600">
+                    <summary className="cursor-pointer select-none text-sm font-semibold text-slate-700">
+                      원본 폼 데이터
+                    </summary>
+                    <div className="mt-3 space-y-4">
+                      <div>
+                        <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                          values
+                        </h3>
+                        <pre className="mt-1 max-h-48 overflow-y-auto whitespace-pre-wrap break-words rounded bg-slate-900 px-3 py-2 font-mono text-[11px] text-slate-100">
+                          {JSON.stringify(formPayload?.values ?? {}, null, 2)}
+                        </pre>
+                      </div>
+                      <div>
+                        <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                          fields
+                        </h3>
+                        <pre className="mt-1 max-h-48 overflow-y-auto whitespace-pre-wrap break-words rounded bg-slate-900 px-3 py-2 font-mono text-[11px] text-slate-100">
+                          {JSON.stringify(formPayload?.fields ?? [], null, 2)}
+                        </pre>
+                      </div>
+                    </div>
+                  </details>
+                </section>
 
-              <AutomationPanel
-                state={automationState}
-                errorMessage={automationError}
-                onPause={pauseAutomationLoop}
-                onResume={resumeAutomationLoop}
-                onStop={stopAutomationLoop}
-                plannedCount={automationQueue.length}
-              />
+                <aside className="space-y-6">
+                  <section className="space-y-4 rounded-lg border border-slate-200 bg-white px-4 py-3 shadow-sm">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="space-y-1">
+                        <p className="text-sm font-semibold text-slate-800">
+                          자동화 개요
+                        </p>
+                        <p className="text-xs text-slate-500">
+                          {automationStatusMeta.description}
+                        </p>
+                      </div>
+                      <span
+                        className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-semibold ${automationStatusMeta.badgeClass}`}
+                      >
+                        <span
+                          className={`h-2 w-2 rounded-full ${automationStatusMeta.dotClass}`}
+                          aria-hidden="true"
+                        />
+                        {automationStatusMeta.label}
+                      </span>
+                    </div>
 
-              <details className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-600">
-                <summary className="cursor-pointer select-none text-sm font-semibold text-slate-700">
-                  원본 폼 데이터
-                </summary>
-                <div className="mt-3 space-y-4">
-                  <div>
-                    <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                      values
-                    </h3>
-                    <pre className="mt-1 max-h-48 overflow-y-auto whitespace-pre-wrap break-words rounded bg-slate-900 px-3 py-2 font-mono text-[11px] text-slate-100">
-                      {JSON.stringify(formPayload?.values ?? {}, null, 2)}
-                    </pre>
-                  </div>
-                  <div>
-                    <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                      fields
-                    </h3>
-                    <pre className="mt-1 max-h-48 overflow-y-auto whitespace-pre-wrap break-words rounded bg-slate-900 px-3 py-2 font-mono text-[11px] text-slate-100">
-                      {JSON.stringify(formPayload?.fields ?? [], null, 2)}
-                    </pre>
-                  </div>
-                </div>
-              </details>
+                    <div className="space-y-2 text-xs text-slate-600">
+                      <div className="flex justify-between">
+                        <span className="font-medium text-slate-700">
+                          예약된 생성
+                        </span>
+                        <span>{automationQueue.length}개</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="font-medium text-slate-700">
+                          진행 상황
+                        </span>
+                        <span>
+                          {automationStatusMeta.processedCount}/
+                          {automationStatusMeta.totalCount}
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="font-medium text-slate-700">
+                          대기 중 아이템
+                        </span>
+                        <span>{automationState.activeCount}개</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="font-medium text-slate-700">
+                          다음 재시도 시각
+                        </span>
+                        <span>{automationStatusMeta.nextRetryAt}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="font-medium text-slate-700">
+                          다음 프롬프트
+                        </span>
+                        <span className="max-w-[12rem] truncate text-right">
+                          {automationStatusMeta.nextPrompt ?? "-"}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="h-2 w-full overflow-hidden rounded-full bg-slate-200">
+                      <div
+                        className="h-full rounded-full bg-emerald-500 transition-all"
+                        style={{
+                          width: `${automationStatusMeta.progressPercent}%`,
+                        }}
+                        aria-hidden="true"
+                      />
+                    </div>
+
+                    {automationError ? (
+                      <p className="text-xs text-red-600">{automationError}</p>
+                    ) : null}
+                  </section>
+
+                  <GenerationPanel
+                    onPrepare={handleRequestGeneration}
+                    highlightInfo={highlightInfo}
+                    preparationMessage={preparationMessage}
+                    isConfirming={isConfirming}
+                    onConfirm={handleConfirmGeneration}
+                    onCancel={handleCancelGeneration}
+                    errorMessage={generationError}
+                  />
+
+                  <AutomationPanel
+                    state={automationState}
+                    errorMessage={automationError}
+                    onPause={pauseAutomationLoop}
+                    onResume={resumeAutomationLoop}
+                    onStop={stopAutomationLoop}
+                    plannedCount={automationQueue.length}
+                  />
+                </aside>
+              </div>
             </div>
           </div>
         </div>

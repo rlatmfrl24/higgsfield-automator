@@ -21,6 +21,83 @@ const DEFAULT_STATE = {
 };
 
 let automationState = { ...DEFAULT_STATE };
+let isAdvancingQueue = false;
+
+const queuesAreEqual = (nextQueue, previousQueue) => {
+  if (nextQueue === previousQueue) {
+    return true;
+  }
+
+  if (!Array.isArray(nextQueue) || !Array.isArray(previousQueue)) {
+    return false;
+  }
+
+  if (nextQueue.length !== previousQueue.length) {
+    return false;
+  }
+
+  return nextQueue.every((entry, index) => {
+    const previousEntry = previousQueue[index];
+
+    if (!entry && !previousEntry) {
+      return true;
+    }
+
+    if (!entry || !previousEntry) {
+      return false;
+    }
+
+    return (
+      entry.prompt === previousEntry.prompt &&
+      entry.ratio === previousEntry.ratio
+    );
+  });
+};
+
+const signaturesAreEqual = (nextSignatures, previousSignatures) => {
+  if (nextSignatures === previousSignatures) {
+    return true;
+  }
+
+  if (!Array.isArray(nextSignatures) || !Array.isArray(previousSignatures)) {
+    return false;
+  }
+
+  if (nextSignatures.length !== previousSignatures.length) {
+    return false;
+  }
+
+  return nextSignatures.every(
+    (signature, index) => signature === previousSignatures[index]
+  );
+};
+
+const automationStatesAreEqual = (nextState, previousState) => {
+  if (nextState === previousState) {
+    return true;
+  }
+
+  if (!nextState || !previousState) {
+    return false;
+  }
+
+  return (
+    nextState.status === previousState.status &&
+    nextState.processedCount === previousState.processedCount &&
+    nextState.maxCount === previousState.maxCount &&
+    nextState.activeCount === previousState.activeCount &&
+    nextState.nextRetryAt === previousState.nextRetryAt &&
+    nextState.lastError === previousState.lastError &&
+    nextState.cursor === previousState.cursor &&
+    nextState.promptFieldIndex === previousState.promptFieldIndex &&
+    nextState.ratioFieldIndex === previousState.ratioFieldIndex &&
+    queuesAreEqual(nextState.queue, previousState.queue) &&
+    signaturesAreEqual(
+      nextState.activeSignatures,
+      previousState.activeSignatures
+    )
+  );
+};
 
 const withDefaultState = (state) => ({
   ...DEFAULT_STATE,
@@ -81,10 +158,17 @@ function broadcastState(state = automationState) {
 }
 
 async function updateState(partial) {
-  automationState = withDefaultState({
+  const nextState = withDefaultState({
     ...automationState,
     ...(partial ?? {}),
   });
+
+  if (automationStatesAreEqual(nextState, automationState)) {
+    logEvent("state:noop", toPublicState(nextState));
+    return automationState;
+  }
+
+  automationState = nextState;
   await persistState(automationState);
   broadcastState();
   logEvent("state:update", toPublicState(automationState));
@@ -491,78 +575,104 @@ async function handleFeedActiveCount(activeCount, signatures = []) {
     Number.isFinite(activeCount) && activeCount > 0
       ? Math.floor(activeCount)
       : 0;
-  await updateState({ activeCount: clamped, activeSignatures: signatures });
+  const previousActiveCount = automationState.activeCount;
+  const nextState = await updateState({
+    activeCount: clamped,
+    activeSignatures: signatures,
+  });
   logEvent("feed:update", { activeCount: clamped, signatures });
 
-  if (automationState.status === "paused") {
+  if (nextState.status === "paused") {
     await clearRetryAlarm();
     return automationState;
   }
 
-  if (automationState.status !== "running") {
+  if (nextState.status !== "running") {
     return automationState;
   }
 
-  if (automationState.cursor >= automationState.queue.length) {
+  if (nextState.cursor >= nextState.queue.length) {
     await stopAutomationInternal({ reset: true, reason: null });
     return automationState;
+  }
+
+  if (clamped === 0 && previousActiveCount > 0) {
+    await clearRetryAlarm();
+    await scheduleRetry();
+    return automationState;
+  }
+
+  if (clamped > 0) {
+    await scheduleRetry();
   }
 
   return automationState;
 }
 
 async function runNextGeneration() {
-  if (automationState.activeCount > 0) {
-    logEvent("queue:blocked", {
-      reason: "active_cards",
-      activeCount: automationState.activeCount,
-      signatures: automationState.activeSignatures,
-    });
+  if (isAdvancingQueue) {
+    logEvent("queue:advance:skipped", { reason: "in_flight" });
     return false;
   }
 
-  if (
-    automationState.cursor >= automationState.queue.length ||
-    automationState.queue.length === 0
-  ) {
-    await stopAutomationInternal({ reset: true, reason: null });
-    return false;
-  }
+  isAdvancingQueue = true;
+  try {
+    if (automationState.activeCount > 0) {
+      logEvent("queue:blocked", {
+        reason: "active_cards",
+        activeCount: automationState.activeCount,
+        signatures: automationState.activeSignatures,
+      });
+      await scheduleRetry();
+      return false;
+    }
 
-  const entry = automationState.queue[automationState.cursor];
+    if (
+      automationState.cursor >= automationState.queue.length ||
+      automationState.queue.length === 0
+    ) {
+      await stopAutomationInternal({ reset: true, reason: null });
+      return false;
+    }
 
-  if (!entry || !entry.prompt) {
+    const entry = automationState.queue[automationState.cursor];
+
+    if (!entry || !entry.prompt) {
+      await updateState({
+        lastError: "다음 프롬프트 데이터를 확인할 수 없습니다.",
+        cursor: automationState.cursor + 1,
+      });
+      await scheduleRetry();
+      return false;
+    }
+
+    await applyEntryToForm(entry);
+    await triggerGeneration();
+
+    const nextCursor = automationState.cursor + 1;
+    const nextProcessed = automationState.processedCount + 1;
+
     await updateState({
-      lastError: "다음 프롬프트 데이터를 확인할 수 없습니다.",
-      cursor: automationState.cursor + 1,
+      cursor: nextCursor,
+      processedCount: nextProcessed,
+      lastError: null,
     });
-    return false;
+    logEvent("queue:advanced", {
+      cursor: nextCursor,
+      processedCount: nextProcessed,
+    });
+
+    if (nextCursor >= automationState.queue.length) {
+      await stopAutomationInternal({ reset: true, reason: null });
+      logEvent("queue:completed");
+      return false;
+    }
+
+    await scheduleRetry();
+    return true;
+  } finally {
+    isAdvancingQueue = false;
   }
-
-  await applyEntryToForm(entry);
-  await triggerGeneration();
-
-  const nextCursor = automationState.cursor + 1;
-  const nextProcessed = automationState.processedCount + 1;
-
-  await updateState({
-    cursor: nextCursor,
-    processedCount: nextProcessed,
-    lastError: null,
-  });
-  logEvent("queue:advanced", {
-    cursor: nextCursor,
-    processedCount: nextProcessed,
-  });
-
-  if (nextCursor >= automationState.queue.length) {
-    await stopAutomationInternal({ reset: true, reason: null });
-    logEvent("queue:completed");
-    return false;
-  }
-
-  await scheduleRetry();
-  return true;
 }
 
 async function startAutomation({
@@ -615,6 +725,8 @@ async function startAutomation({
           ? cause.message
           : String(cause ?? "이미지 생성 요청에 실패했습니다."),
     });
+    await scheduleRetry();
+    throw cause;
   }
 
   return automationState;
