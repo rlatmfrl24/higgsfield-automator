@@ -1,7 +1,11 @@
-const FEED_ROOT_SELECTOR = "[data-sentry-component='SoulFeed']";
-const FEED_ITEM_SELECTOR = "[data-sentry-component='SoulFeedItem']";
+/// <reference lib="dom" />
 
-const UPSALE_SELECTOR = "[data-sentry-component='ImageUpsellComponent']";
+import {
+  FEED_ITEM_SELECTOR,
+  FEED_ROOT_SELECTOR,
+  UPSALE_SELECTOR,
+} from "../constants";
+
 const UPSALE_TEXT_PATTERNS = [
   /Try\s+Higgsfield\s+Premium/i,
   /Less\s+Wait/i,
@@ -15,21 +19,21 @@ const PROGRESS_SELECTOR =
 const GENERATING_TEXT_PATTERNS = [/generating/i, /loading/i];
 
 const FEED_CHECK_INTERVAL_MS = 2000;
-let observer;
-let intervalId;
+let observer: MutationObserver | undefined;
+let intervalId: number | undefined;
 let lastReportedSignature = "";
 
-function extractCardSignature(card) {
+function extractCardSignature(card: Element) {
   const text = card.textContent ?? "";
   const trimmed = text.replace(/\s+/g, " ").trim();
   return trimmed.slice(0, 200);
 }
 
-function containsUpsellText(textContent) {
+function containsUpsellText(textContent: string) {
   return UPSALE_TEXT_PATTERNS.some((pattern) => pattern.test(textContent));
 }
 
-function isGeneratingCard(card) {
+function isGeneratingCard(card: Element | null | undefined) {
   if (!card) {
     return false;
   }
@@ -55,7 +59,7 @@ function isGeneratingCard(card) {
   return false;
 }
 
-function collectActiveSignatures(cards) {
+function collectActiveSignatures(cards: Element[]) {
   return cards
     .filter((card) => isGeneratingCard(card))
     .map((card) => extractCardSignature(card));
@@ -124,7 +128,7 @@ function startInterval() {
     clearInterval(intervalId);
   }
 
-  intervalId = setInterval(() => {
+  intervalId = window.setInterval(() => {
     reportActiveCount();
   }, FEED_CHECK_INTERVAL_MS);
 }
@@ -136,7 +140,7 @@ function init() {
     const retry = () => {
       const nextFeed = document.querySelector(FEED_ROOT_SELECTOR);
       if (!nextFeed) {
-        setTimeout(retry, 1000);
+        window.setTimeout(retry, 1000);
         return;
       }
       startObserver();
@@ -162,3 +166,5 @@ window.addEventListener("focus", () => {
 });
 
 init();
+
+export {};

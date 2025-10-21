@@ -1,12 +1,27 @@
-const TARGET_ORIGIN = "https://higgsfield.ai";
-const TARGET_PATH = "/image/soul";
-const TARGET_URL = `${TARGET_ORIGIN}${TARGET_PATH}`;
-const FORM_SELECTOR = "#main > div > form";
-const GENERATION_BUTTON_KEY_PHRASE = "Daily free credits left";
+/// <reference lib="dom" />
+
+import { TARGET_ORIGIN, TARGET_PATH, FORM_SELECTOR } from "../constants";
+
 const RETRY_ALARM_NAME = "automation:retry";
 const RETRY_DELAY_MS = 3000;
 
-const DEFAULT_STATE = {
+type QueueEntry = { prompt: string; ratio: string | null };
+
+type AutomationState = {
+  status: "idle" | "running" | "paused";
+  processedCount: number;
+  maxCount: number;
+  activeCount: number;
+  nextRetryAt: number | null;
+  lastError: string | null;
+  queue: QueueEntry[];
+  cursor: number;
+  promptFieldIndex: number | null;
+  ratioFieldIndex: number | null;
+  activeSignatures: string[];
+};
+
+const DEFAULT_STATE: AutomationState = {
   status: "idle",
   processedCount: 0,
   maxCount: 0,
@@ -20,10 +35,13 @@ const DEFAULT_STATE = {
   activeSignatures: [],
 };
 
-let automationState = { ...DEFAULT_STATE };
+let automationState: AutomationState = { ...DEFAULT_STATE };
 let isAdvancingQueue = false;
 
-const queuesAreEqual = (nextQueue, previousQueue) => {
+const queuesAreEqual = (
+  nextQueue: AutomationState["queue"],
+  previousQueue: AutomationState["queue"]
+) => {
   if (nextQueue === previousQueue) {
     return true;
   }
@@ -54,7 +72,10 @@ const queuesAreEqual = (nextQueue, previousQueue) => {
   });
 };
 
-const signaturesAreEqual = (nextSignatures, previousSignatures) => {
+const signaturesAreEqual = (
+  nextSignatures: string[],
+  previousSignatures: string[]
+) => {
   if (nextSignatures === previousSignatures) {
     return true;
   }
@@ -72,7 +93,10 @@ const signaturesAreEqual = (nextSignatures, previousSignatures) => {
   );
 };
 
-const automationStatesAreEqual = (nextState, previousState) => {
+const automationStatesAreEqual = (
+  nextState: AutomationState,
+  previousState: AutomationState
+) => {
   if (nextState === previousState) {
     return true;
   }
@@ -99,7 +123,9 @@ const automationStatesAreEqual = (nextState, previousState) => {
   );
 };
 
-const withDefaultState = (state) => ({
+const withDefaultState = (
+  state: Partial<AutomationState> | undefined
+): AutomationState => ({
   ...DEFAULT_STATE,
   ...(state ?? {}),
   queue: Array.isArray(state?.queue) ? state.queue : [],
@@ -110,7 +136,7 @@ const withDefaultState = (state) => ({
     typeof state?.ratioFieldIndex === "number" ? state.ratioFieldIndex : null,
 });
 
-const toPublicState = (state) => ({
+const toPublicState = (state: AutomationState) => ({
   status: state.status,
   processedCount: state.processedCount,
   maxCount: state.maxCount,
@@ -122,27 +148,27 @@ const toPublicState = (state) => ({
   activeSignatures: state.activeSignatures,
 });
 
-const log = (...args) => {
+const log = (...args: unknown[]) => {
   console.info("[HiggsfieldAutomator]", ...args);
 };
 
-const warn = (...args) => {
+const warn = (...args: unknown[]) => {
   console.warn("[HiggsfieldAutomator]", ...args);
 };
 
-const errorLog = (...args) => {
+const errorLog = (...args: unknown[]) => {
   console.error("[HiggsfieldAutomator]", ...args);
 };
 
-const logEvent = (event, detail = {}) => {
+const logEvent = (event: string, detail: Record<string, unknown> = {}) => {
   log(`event=${event}`, detail);
 };
 
-async function persistState(nextState) {
+async function persistState(nextState: AutomationState) {
   await chrome.storage.local.set({ automationState: nextState });
 }
 
-function broadcastState(state = automationState) {
+function broadcastState(state: AutomationState = automationState) {
   chrome.runtime.sendMessage(
     { type: "automation:state", payload: toPublicState(state) },
     () => {
@@ -157,7 +183,7 @@ function broadcastState(state = automationState) {
   );
 }
 
-async function updateState(partial) {
+async function updateState(partial: Partial<AutomationState>) {
   const nextState = withDefaultState({
     ...automationState,
     ...(partial ?? {}),
@@ -187,7 +213,7 @@ async function restoreState() {
   }
 }
 
-function matchesTarget(url) {
+function matchesTarget(url: string | undefined | null) {
   if (!url) {
     return false;
   }
@@ -217,58 +243,6 @@ async function getActiveSoulTab() {
   return matchingTab ?? tab;
 }
 
-function clickGenerationButton(keyPhrase) {
-  const normalise = (value) => value?.replace(/\s+/g, " ").trim().toLowerCase();
-
-  const equalsTarget = (value) => {
-    if (!value) {
-      return false;
-    }
-
-    return normalise(value)?.includes(keyPhrase.toLowerCase()) ?? false;
-  };
-
-  const candidates = Array.from(
-    document.querySelectorAll("button, [role='button']")
-  ).filter((element) => element instanceof HTMLElement);
-
-  const targetButton = candidates.find((element) => {
-    if (equalsTarget(element.textContent)) {
-      return true;
-    }
-
-    if (element.ariaLabel && equalsTarget(element.ariaLabel)) {
-      return true;
-    }
-
-    const labelledBy = element.getAttribute("aria-labelledby");
-
-    if (labelledBy) {
-      const labels = labelledBy
-        .split(/\s+/)
-        .map((id) => document.getElementById(id))
-        .filter((label) => label instanceof HTMLElement);
-
-      if (labels.some((label) => equalsTarget(label.textContent))) {
-        return true;
-      }
-    }
-
-    return false;
-  });
-
-  if (!targetButton) {
-    return {
-      success: false,
-      error: "이미지 생성 버튼을 찾지 못했습니다.",
-    };
-  }
-
-  targetButton.click();
-
-  return { success: true };
-}
-
 async function triggerGeneration() {
   const tab = await getActiveSoulTab();
 
@@ -288,25 +262,28 @@ async function triggerGeneration() {
           success: false,
           error: "업셀 카드가 감지되었습니다.",
           feedHasUpsell: true,
-        };
+        } as const;
       }
 
-      const normalise = (value) =>
+      const normalise = (value: string | null | undefined) =>
         value?.replace(/\s+/g, " ").trim().toLowerCase();
 
-      const equalsTarget = (value) => {
+      const equalsTarget = (value: string | null | undefined) => {
         if (!value) {
           return false;
         }
 
-        return normalise(value)?.includes(
-          "daily free credits left".toLowerCase()
+        return (
+          normalise(value)?.includes("daily free credits left".toLowerCase()) ??
+          false
         );
       };
 
       const candidates = Array.from(
         document.querySelectorAll("button, [role='button']")
-      ).filter((element) => element instanceof HTMLElement);
+      ).filter(
+        (element): element is HTMLElement => element instanceof HTMLElement
+      );
 
       const targetButton = candidates.find((element) => {
         if (equalsTarget(element.textContent)) {
@@ -323,7 +300,9 @@ async function triggerGeneration() {
           const labels = labelledBy
             .split(/\s+/)
             .map((id) => document.getElementById(id))
-            .filter((label) => label instanceof HTMLElement);
+            .filter(
+              (label): label is HTMLElement => label instanceof HTMLElement
+            );
 
           if (labels.some((label) => equalsTarget(label.textContent))) {
             return true;
@@ -338,7 +317,7 @@ async function triggerGeneration() {
           success: false,
           error: "이미지 생성 버튼을 찾지 못했습니다.",
           feedHasUpsell: false,
-        };
+        } as const;
       }
 
       targetButton.click();
@@ -346,11 +325,14 @@ async function triggerGeneration() {
       return {
         success: true,
         feedHasUpsell: false,
-      };
+      } as const;
     },
   });
 
-  const response = result?.result;
+  const response = result?.result as
+    | { success: true; feedHasUpsell: boolean }
+    | { success: false; error?: string; feedHasUpsell?: boolean }
+    | undefined;
 
   if (!response?.success) {
     throw new Error(
@@ -359,16 +341,22 @@ async function triggerGeneration() {
   }
 }
 
-function sanitizeQueue(queue) {
+function sanitizeQueue(queue: unknown): QueueEntry[] {
   if (!Array.isArray(queue)) {
     return [];
   }
 
   return queue
-    .map((entry) => {
+    .map((raw) => {
+      if (!raw || typeof raw !== "object") {
+        return null;
+      }
+
+      const entry = raw as { prompt?: unknown; ratio?: unknown };
+
       const prompt =
-        typeof entry?.prompt === "string" ? entry.prompt.trim() : "";
-      const ratio = typeof entry?.ratio === "string" ? entry.ratio.trim() : "";
+        typeof entry.prompt === "string" ? entry.prompt.trim() : "";
+      const ratio = typeof entry.ratio === "string" ? entry.ratio.trim() : "";
 
       if (!prompt) {
         return null;
@@ -377,19 +365,22 @@ function sanitizeQueue(queue) {
       return {
         prompt,
         ratio: ratio || null,
-      };
+      } satisfies QueueEntry;
     })
-    .filter((entry) => entry !== null);
+    .filter((entry): entry is QueueEntry => entry !== null);
 }
 
 function applyFieldsInPage(
-  selector,
-  promptIndex,
-  promptValue,
-  ratioIndex,
-  ratioValue
+  selector: string,
+  promptIndex: number | null,
+  promptValue: string | null,
+  ratioIndex: number | null,
+  ratioValue: string | null
 ) {
-  const setNativeValue = (element, value) => {
+  const setNativeValue = (
+    element: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement,
+    value: string | null
+  ) => {
     const ownDescriptor = Object.getOwnPropertyDescriptor(element, "value");
 
     if (ownDescriptor?.set) {
@@ -397,7 +388,7 @@ function applyFieldsInPage(
       return;
     }
 
-    let prototype = Object.getPrototypeOf(element);
+    let prototype: HTMLElement | null = Object.getPrototypeOf(element);
 
     while (prototype) {
       const descriptor = Object.getOwnPropertyDescriptor(prototype, "value");
@@ -410,25 +401,28 @@ function applyFieldsInPage(
       prototype = Object.getPrototypeOf(prototype);
     }
 
-    element.value = value;
+    (element as HTMLInputElement).value = value ?? "";
   };
 
-  const applyValue = (fieldIndex, value) => {
+  const applyValue = (fieldIndex: number | null, value: string | null) => {
     if (typeof fieldIndex !== "number" || fieldIndex < 0) {
-      return { success: true };
+      return { success: true } as const;
     }
 
     const form = document.querySelector(selector);
 
     if (!(form instanceof HTMLFormElement)) {
-      return { success: false, error: "폼을 찾을 수 없습니다." };
+      return { success: false, error: "폼을 찾을 수 없습니다." } as const;
     }
 
     const fields = form.querySelectorAll("input, textarea, select");
     const element = fields.item(fieldIndex);
 
     if (!(element instanceof HTMLElement)) {
-      return { success: false, error: "대상 필드를 찾을 수 없습니다." };
+      return {
+        success: false,
+        error: "대상 필드를 찾을 수 없습니다.",
+      } as const;
     }
 
     if (
@@ -442,7 +436,10 @@ function applyFieldsInPage(
         option.selected = option.value === value;
       });
     } else {
-      return { success: false, error: "지원하지 않는 필드 타입입니다." };
+      return {
+        success: false,
+        error: "지원하지 않는 필드 타입입니다.",
+      } as const;
     }
 
     const inputEvent = new Event("input", {
@@ -458,7 +455,7 @@ function applyFieldsInPage(
     element.dispatchEvent(inputEvent);
     element.dispatchEvent(changeEvent);
 
-    return { success: true };
+    return { success: true } as const;
   };
 
   const promptResult = applyValue(promptIndex, promptValue ?? "");
@@ -478,10 +475,13 @@ function applyFieldsInPage(
     }
   }
 
-  return { success: true };
+  return { success: true } as const;
 }
 
-async function applyEntryToForm(entry) {
+async function applyEntryToForm(entry: {
+  prompt: string;
+  ratio: string | null;
+}) {
   const tab = await getActiveSoulTab();
 
   if (!tab?.id) {
@@ -513,7 +513,9 @@ async function applyEntryToForm(entry) {
     ],
   });
 
-  const response = result?.result;
+  const response = result?.result as
+    | ReturnType<typeof applyFieldsInPage>
+    | undefined;
 
   if (!response?.success) {
     throw new Error(response?.error ?? "폼 데이터를 업데이트하지 못했습니다.");
@@ -549,11 +551,14 @@ async function scheduleRetry() {
   return when;
 }
 
-async function stopAutomationInternal({ reset = true, reason = null } = {}) {
+async function stopAutomationInternal({
+  reset = true,
+  reason = null,
+}: { reset?: boolean; reason?: string | null } = {}) {
   await clearRetryAlarm();
   logEvent("automation:stop", { reset, reason });
 
-  const nextState = {
+  const nextState: AutomationState = {
     ...automationState,
     status: "idle",
     nextRetryAt: null,
@@ -570,7 +575,10 @@ async function stopAutomationInternal({ reset = true, reason = null } = {}) {
   return updateState(nextState);
 }
 
-async function handleFeedActiveCount(activeCount, signatures = []) {
+async function handleFeedActiveCount(
+  activeCount: number,
+  signatures: string[] = []
+) {
   const clamped =
     Number.isFinite(activeCount) && activeCount > 0
       ? Math.floor(activeCount)
@@ -679,6 +687,10 @@ async function startAutomation({
   queue,
   promptFieldIndex,
   ratioFieldIndex,
+}: {
+  queue?: unknown;
+  promptFieldIndex?: number;
+  ratioFieldIndex?: number | null;
 } = {}) {
   const sanitizedQueue = sanitizeQueue(queue);
 
@@ -769,82 +781,105 @@ async function resumeAutomation() {
   return automationState;
 }
 
-function buildSuccessResponse(state) {
+function buildSuccessResponse(state: AutomationState) {
   return {
-    success: true,
+    success: true as const,
     state: toPublicState(state),
   };
 }
 
-function buildErrorResponse(cause) {
+function buildErrorResponse(cause: unknown) {
   const message =
     cause instanceof Error
       ? cause.message
       : String(cause ?? "알 수 없는 오류가 발생했습니다.");
   return {
-    success: false,
+    success: false as const,
     error: message,
     state: toPublicState(automationState),
   };
 }
 
-chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  const { type, payload } = message ?? {};
+type AutomationMessagePayload = {
+  queue?: unknown;
+  promptFieldIndex?: number;
+  ratioFieldIndex?: number | null;
+  activeCount?: number;
+  signatures?: string[];
+};
 
-  (async () => {
-    try {
-      switch (type) {
-        case "automation:getState": {
-          sendResponse(buildSuccessResponse(automationState));
-          return;
+chrome.runtime.onMessage.addListener(
+  (
+    message: { type?: string; payload?: AutomationMessagePayload } | undefined,
+    _sender: unknown,
+    sendResponse: (response: unknown) => void
+  ) => {
+    const { type, payload } = (message ?? {}) as {
+      type?: string;
+      payload?: {
+        queue?: unknown;
+        promptFieldIndex?: number;
+        ratioFieldIndex?: number | null;
+        activeCount?: number;
+        signatures?: string[];
+      };
+    };
+
+    (async () => {
+      try {
+        switch (type) {
+          case "automation:getState": {
+            sendResponse(buildSuccessResponse(automationState));
+            return;
+          }
+          case "automation:start": {
+            const state = await startAutomation(payload ?? {});
+            sendResponse(buildSuccessResponse(state));
+            return;
+          }
+          case "automation:pause": {
+            const state = await pauseAutomation();
+            sendResponse(buildSuccessResponse(state));
+            return;
+          }
+          case "automation:resume": {
+            const state = await resumeAutomation();
+            sendResponse(buildSuccessResponse(state));
+            return;
+          }
+          case "automation:stop": {
+            const state = await stopAutomationInternal({
+              reset: true,
+              reason: null,
+            });
+            sendResponse(buildSuccessResponse(state));
+            return;
+          }
+          case "feed:active-count": {
+            const state = await handleFeedActiveCount(
+              payload?.activeCount ?? 0,
+              payload?.signatures ?? []
+            );
+            sendResponse(buildSuccessResponse(state));
+            return;
+          }
+          default: {
+            sendResponse(
+              buildErrorResponse(new Error("지원되지 않는 메시지입니다."))
+            );
+          }
         }
-        case "automation:start": {
-          const state = await startAutomation(payload ?? {});
-          sendResponse(buildSuccessResponse(state));
-          return;
-        }
-        case "automation:pause": {
-          const state = await pauseAutomation();
-          sendResponse(buildSuccessResponse(state));
-          return;
-        }
-        case "automation:resume": {
-          const state = await resumeAutomation();
-          sendResponse(buildSuccessResponse(state));
-          return;
-        }
-        case "automation:stop": {
-          const state = await stopAutomationInternal({
-            reset: true,
-            reason: null,
-          });
-          sendResponse(buildSuccessResponse(state));
-          return;
-        }
-        case "feed:active-count": {
-          const state = await handleFeedActiveCount(
-            payload?.activeCount ?? 0,
-            payload?.signatures ?? []
-          );
-          sendResponse(buildSuccessResponse(state));
-          return;
-        }
-        default: {
-          sendResponse(
-            buildErrorResponse(new Error("지원되지 않는 메시지입니다."))
-          );
-        }
+      } catch (cause) {
+        errorLog("Message handling failed", type, cause);
+        sendResponse(buildErrorResponse(cause));
       }
-    } catch (cause) {
-      errorLog("Message handling failed", type, cause);
-      sendResponse(buildErrorResponse(cause));
-    }
-  })();
+    })();
 
-  return true;
-});
+    return true;
+  }
+);
 
-chrome.alarms.onAlarm.addListener(async (alarm) => {
+chrome.alarms.onAlarm.addListener(async (alarm: { name: string }) => {
   if (alarm.name !== RETRY_ALARM_NAME) {
     return;
   }
@@ -891,3 +926,5 @@ chrome.runtime.onInstalled.addListener(() => {
 restoreState().catch((cause) => {
   errorLog("Initial state restore failed", cause);
 });
+
+export {};

@@ -31,10 +31,11 @@ export const MultiPromptTable = ({
       </h2>
       <button
         type="button"
-        className="rounded border border-emerald-300 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700 hover:bg-emerald-100 disabled:opacity-60"
+        className="inline-flex items-center gap-1.5 rounded-full border border-emerald-300 bg-white px-3 py-1.5 text-xs font-semibold text-emerald-600 shadow-sm transition hover:border-emerald-400 hover:bg-emerald-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:bg-white"
         onClick={onAdd}
         disabled={disabledAdd}
       >
+        <span className="text-base leading-none">＋</span>
         프롬프트 추가
       </button>
     </div>

@@ -8,3 +8,7 @@ export const ACTIVE_TAB_QUERY = {
 } as const;
 
 export const FORM_SELECTOR = "#main > div > form";
+
+export const FEED_ROOT_SELECTOR = "[data-sentry-component='SoulFeed']";
+export const FEED_ITEM_SELECTOR = "[data-sentry-component='SoulFeedItem']";
+export const UPSALE_SELECTOR = "[data-sentry-component='ImageUpsellComponent']";

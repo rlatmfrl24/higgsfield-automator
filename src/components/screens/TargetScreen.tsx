@@ -1,11 +1,16 @@
-import { useCallback, useMemo, useState, useEffect } from "react";
+import {
+  useCallback,
+  useMemo,
+  useState,
+  useEffect,
+  type KeyboardEvent,
+} from "react";
 
 import type { FormSnapshotPayload } from "../../services/formSnapshot";
 import { updateActiveTabFieldValue } from "../../services/formControl";
 import { useLiveRegion } from "../../hooks/useLiveRegion";
 import { HighlightBadges } from "./target/HighlightBadges";
 import { GenerationPanel } from "./target/GenerationPanel";
-import { AutomationPanel } from "./target/automation/AutomationPanel";
 import { useAutomationState } from "../../hooks/useAutomationState";
 import {
   deriveFormData,
@@ -74,6 +79,15 @@ export const TargetScreen = ({
   const [preparationMessage, setPreparationMessage] = useState<string | null>(
     null
   );
+  const [automationActionMessage, setAutomationActionMessage] = useState<
+    string | null
+  >(null);
+  const [automationActionError, setAutomationActionError] = useState<
+    string | null
+  >(null);
+  const [isAutomationActionProcessing, setIsAutomationActionProcessing] =
+    useState(false);
+  const [activeTab, setActiveTab] = useState<"control" | "download">("control");
 
   const {
     state: automationState,
@@ -85,6 +99,15 @@ export const TargetScreen = ({
     isLoading: isAutomationLoading,
     refresh: refreshAutomationState,
   } = useAutomationState();
+
+  useEffect(() => {
+    setAutomationActionMessage(null);
+    setAutomationActionError(null);
+  }, [
+    automationState.status,
+    automationState.processedCount,
+    automationState.nextRetryAt,
+  ]);
 
   const automationQueue = useMemo(() => {
     return entries
@@ -137,6 +160,14 @@ export const TargetScreen = ({
     setGenerationError(null);
     setIsConfirming(false);
   }, []);
+
+  const handleSelectTab = useCallback(
+    (tab: "control" | "download") => {
+      setActiveTab(tab);
+      resetMessages();
+    },
+    [resetMessages]
+  );
 
   const failPreparation = useCallback(
     (message: string) => {
@@ -248,6 +279,47 @@ export const TargetScreen = ({
     setEntries,
     setRatioValue,
   ]);
+
+  const runAutomationAction = useCallback(
+    async (action: () => Promise<void>, successMessage: string) => {
+      try {
+        setIsAutomationActionProcessing(true);
+        setAutomationActionError(null);
+        await action();
+        setAutomationActionMessage(successMessage);
+      } catch (error) {
+        const message =
+          error instanceof Error
+            ? error.message
+            : "요청을 처리하는 중 오류가 발생했습니다.";
+        setAutomationActionError(message);
+      } finally {
+        setIsAutomationActionProcessing(false);
+      }
+    },
+    []
+  );
+
+  const handleResumeAutomation = useCallback(() => {
+    return runAutomationAction(
+      resumeAutomationLoop,
+      "자동 생성 루프를 재개했습니다."
+    );
+  }, [resumeAutomationLoop, runAutomationAction]);
+
+  const handlePauseAutomation = useCallback(() => {
+    return runAutomationAction(
+      pauseAutomationLoop,
+      "자동 생성 루프를 일시중단했습니다."
+    );
+  }, [pauseAutomationLoop, runAutomationAction]);
+
+  const handleStopAutomation = useCallback(() => {
+    return runAutomationAction(
+      stopAutomationLoop,
+      "자동 생성 루프를 종료했습니다."
+    );
+  }, [runAutomationAction, stopAutomationLoop]);
 
   const handleCancelGeneration = useCallback(() => {
     setIsConfirming(false);
@@ -397,6 +469,8 @@ export const TargetScreen = ({
       currentPrompt,
       nextPrompt,
       nextRetryAt: formatTimeLabel(automationState.nextRetryAt),
+      status,
+      maxCount: automationState.maxCount,
     };
   }, [
     automationQueue,
@@ -409,201 +483,341 @@ export const TargetScreen = ({
     formatTimeLabel,
   ]);
 
+  const automationRemainingCount = Math.max(
+    (automationStatusMeta.maxCount ?? automationQueue.length) -
+      automationStatusMeta.processedCount,
+    0
+  );
+
   const handleRefreshAutomation = useCallback(() => {
     void refreshAutomationState();
   }, [refreshAutomationState]);
 
   const isAutomationRunning = automationState.status === "running";
 
+  const baseButtonClasses =
+    "inline-flex items-center justify-center rounded-xl font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-emerald-500 disabled:cursor-not-allowed disabled:opacity-60";
+  const primaryButtonClasses = `${baseButtonClasses} bg-gradient-to-r from-emerald-400 to-emerald-500 text-white shadow-lg shadow-emerald-200/60 hover:from-emerald-500 hover:to-emerald-600 active:from-emerald-600 active:to-emerald-600`;
+  const secondaryButtonClasses = `${baseButtonClasses} border border-emerald-200 bg-white text-emerald-600 shadow-sm shadow-emerald-100/60 hover:bg-emerald-50 active:bg-emerald-100`;
+  const automationActionButtonClasses = `${baseButtonClasses} border border-emerald-200 bg-white text-emerald-600 hover:border-emerald-300 hover:bg-emerald-50 active:bg-emerald-100 disabled:text-emerald-300`;
+  const automationStopButtonClasses = `${baseButtonClasses} border border-rose-200 bg-white text-rose-500 hover:border-rose-300 hover:bg-rose-50 active:bg-rose-100 disabled:text-rose-300`;
+  const tabItemBaseClasses =
+    "relative flex cursor-pointer select-none items-center justify-center rounded-xl px-4 py-2 text-sm font-semibold text-emerald-500 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-emerald-500";
+  const tabItemActiveClasses =
+    "bg-white text-emerald-700 shadow-md shadow-emerald-200/60 after:absolute after:-bottom-3 after:left-1/2 after:h-1 after:w-8 after:-translate-x-1/2 after:rounded-full after:bg-emerald-500";
+  const tabItemInactiveClasses = "hover:text-emerald-600 hover:bg-white/40";
+  const controlTabId = "target-screen-tab-control";
+  const downloadTabId = "target-screen-tab-download";
+  const controlPanelId = "target-screen-panel-control";
+  const downloadPanelId = "target-screen-panel-download";
+  const tabs = [
+    {
+      value: "control" as const,
+      label: "폼 제어 패널",
+      tabId: controlTabId,
+      panelId: controlPanelId,
+    },
+    {
+      value: "download" as const,
+      label: "자동 다운로드 패널",
+      tabId: downloadTabId,
+      panelId: downloadPanelId,
+    },
+  ];
+
+  const handleTabKeyDown = useCallback(
+    (tab: "control" | "download", event: KeyboardEvent<HTMLDivElement>) => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        handleSelectTab(tab);
+      }
+    },
+    [handleSelectTab]
+  );
+
   return (
-    <div className="flex flex-col items-center gap-6 min-h-screen w-full bg-slate-50 text-slate-800 px-4 py-10 sm:px-6">
-      <div className="rounded-xl border border-green-200 bg-green-50 px-6 py-4 text-center shadow-sm">
-        <h1 className="text-2xl font-bold text-green-700">
-          타겟 페이지에 도달했습니다!
-        </h1>
-        <p className="mt-2 text-sm text-green-600">
-          현재 Higgsfield Soul 페이지에 있으므로 익스텐션 기능을 사용할 수
-          있습니다.
-        </p>
-      </div>
+    <div className="flex min-h-screen w-full justify-center bg-slate-50 px-4 py-10 text-slate-800 sm:px-6">
+      <div className="flex w-full max-w-6xl flex-col gap-8">
+        <div className="rounded-2xl border border-emerald-100 bg-gradient-to-br from-emerald-50 via-white to-emerald-50 px-8 py-6 text-center shadow-md">
+          <h1 className="text-3xl font-bold text-emerald-700">
+            타겟 페이지에 도달했습니다!
+          </h1>
+          <p className="mt-2 text-sm text-emerald-600">
+            현재 Higgsfield Soul 페이지에 있으므로 익스텐션 기능을 곧바로 실행할
+            수 있습니다.
+          </p>
+        </div>
 
-      <div className="flex flex-wrap items-center justify-center gap-3">
-        <button
-          className="rounded-lg bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white font-semibold px-6 py-3 transition-colors disabled:bg-emerald-300"
-          onClick={onReadForm}
-          disabled={isReadingForm}
-          type="button"
-        >
-          {isReadingForm ? "폼 데이터 읽는 중..." : "폼 데이터 화면 출력"}
-        </button>
-        <button
-          className="rounded-lg border border-slate-300 bg-white px-5 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-100 disabled:border-slate-200 disabled:text-slate-400"
-          onClick={handleRefreshAutomation}
-          disabled={isAutomationLoading}
-          type="button"
-        >
-          {isAutomationLoading
-            ? "자동화 상태 동기화 중..."
-            : "자동화 상태 새로고침"}
-        </button>
-      </div>
+        <div className="flex flex-wrap items-center gap-3">
+          <button
+            className={`${primaryButtonClasses} px-6 py-3 text-base`}
+            onClick={onReadForm}
+            disabled={isReadingForm}
+            type="button"
+          >
+            {isReadingForm ? "폼 데이터 읽는 중..." : "폼 데이터 화면 출력"}
+          </button>
+          <button
+            className={`${secondaryButtonClasses} px-5 py-3 text-sm`}
+            onClick={handleRefreshAutomation}
+            disabled={isAutomationLoading}
+            type="button"
+          >
+            {isAutomationLoading
+              ? "자동화 상태 동기화 중..."
+              : "자동화 상태 새로고침"}
+          </button>
+        </div>
 
-      {formReadError ? (
-        <p className="text-sm text-red-600">{formReadError}</p>
-      ) : null}
+        {formReadError ? (
+          <p className="text-sm font-semibold text-rose-600">{formReadError}</p>
+        ) : null}
 
-      {derived ? (
-        <div className="w-full mt-2">
-          <div className="rounded-lg border border-slate-200 bg-white shadow-sm max-w-6xl mx-auto w-full">
-            <div className="border-b border-slate-200 bg-slate-100 px-4 py-3 text-left text-sm font-semibold text-slate-700 flex items-center justify-between">
-              <span>폼 제어 패널</span>
-            </div>
-
-            <div className="p-6 space-y-8" aria-live="polite">
-              <div className="grid gap-6 xl:grid-cols-[2fr_1fr] xl:items-start">
-                <section className="space-y-6">
-                  <HighlightBadges
-                    figures={derived.figures}
-                    datasetValues={derived.datasetValues}
-                  />
-
-                  {isAutomationRunning ? (
-                    <div className="rounded-lg border border-slate-200 bg-slate-100 px-4 py-6 text-center text-sm text-slate-600">
-                      자동 생성 루프가 실행 중입니다. 자동화가 종료되면 멀티
-                      프롬프트 입력 폼이 다시 표시됩니다.
-                    </div>
-                  ) : (
-                    <MultiPromptTable
-                      entries={entries}
-                      selectOptions={selectOptions}
-                      onChangePrompt={handleChangePrompt}
-                      onChangeRatio={handleChangeRatio}
-                      onChangeCount={handleChangeCount}
-                      onRemove={handleRemovePrompt}
-                      onAdd={handleAddPrompt}
-                      disabledAdd={!canAddMore}
-                    />
-                  )}
-                </section>
-
-                <aside className="space-y-6">
-                  <section className="space-y-4 rounded-lg border border-emerald-200 bg-emerald-50 px-5 py-6 shadow-sm">
-                    <div className="space-y-2">
-                      <p className="text-xs font-semibold uppercase tracking-wide text-emerald-600">
-                        현재 진행 중
-                      </p>
-                      <p className="text-lg font-semibold text-emerald-900 break-words">
-                        {automationStatusMeta.currentPrompt ?? "-"}
-                      </p>
-                    </div>
-                    <div className="space-y-2">
-                      <p className="text-xs font-semibold uppercase tracking-wide text-emerald-600">
-                        다음 예정
-                      </p>
-                      <p className="text-base font-semibold text-emerald-800 break-words">
-                        {automationStatusMeta.nextPrompt ?? "-"}
-                      </p>
-                    </div>
-                  </section>
-
-                  <section className="space-y-4 rounded-lg border border-slate-200 bg-white px-4 py-3 shadow-sm">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="space-y-1">
-                        <p className="text-sm font-semibold text-slate-800">
-                          자동화 개요
-                        </p>
-                        <p className="text-xs text-slate-500">
-                          {automationStatusMeta.description}
-                        </p>
-                      </div>
-                      <span
-                        className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-semibold ${automationStatusMeta.badgeClass}`}
-                      >
-                        <span
-                          className={`h-2 w-2 rounded-full ${automationStatusMeta.dotClass}`}
-                          aria-hidden="true"
-                        />
-                        {automationStatusMeta.label}
-                      </span>
-                    </div>
-
-                    <div className="space-y-2 text-xs text-slate-600">
-                      <div className="flex justify-between">
-                        <span className="font-medium text-slate-700">
-                          예약된 생성
-                        </span>
-                        <span>{automationQueue.length}개</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="font-medium text-slate-700">
-                          진행 상황
-                        </span>
-                        <span>
-                          {automationStatusMeta.processedCount}/
-                          {automationStatusMeta.totalCount}
-                        </span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="font-medium text-slate-700">
-                          대기 중 아이템
-                        </span>
-                        <span>{automationState.activeCount}개</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="font-medium text-slate-700">
-                          다음 재시도 시각
-                        </span>
-                        <span>{automationStatusMeta.nextRetryAt}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="font-medium text-slate-700">
-                          다음 프롬프트
-                        </span>
-                        <span className="max-w-[12rem] truncate text-right">
-                          {automationStatusMeta.nextPrompt ?? "-"}
-                        </span>
-                      </div>
-                    </div>
-
-                    <div className="h-2 w-full overflow-hidden rounded-full bg-slate-200">
+        {derived ? (
+          <div className="w-full">
+            <div className="w-full overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-lg shadow-slate-200/60">
+              <div className="border-b border-slate-200 bg-gradient-to-r from-emerald-50 via-white to-emerald-50 px-6 pt-5">
+                <div
+                  role="tablist"
+                  aria-label="타겟 화면 내비게이션"
+                  className="relative flex gap-3 rounded-t-2xl bg-emerald-100/40 p-2"
+                >
+                  {tabs.map(({ value, label, tabId, panelId }) => {
+                    const isActive = activeTab === value;
+                    return (
                       <div
-                        className="h-full rounded-full bg-emerald-500 transition-all"
-                        style={{
-                          width: `${automationStatusMeta.progressPercent}%`,
-                        }}
-                        aria-hidden="true"
-                      />
-                    </div>
-
-                    {automationError ? (
-                      <p className="text-xs text-red-600">{automationError}</p>
-                    ) : null}
-                  </section>
-
-                  <GenerationPanel
-                    onPrepare={handleRequestGeneration}
-                    highlightInfo={highlightInfo}
-                    preparationMessage={preparationMessage}
-                    isConfirming={isConfirming}
-                    onConfirm={handleConfirmGeneration}
-                    onCancel={handleCancelGeneration}
-                    errorMessage={generationError}
-                  />
-
-                  <AutomationPanel
-                    state={automationState}
-                    errorMessage={automationError}
-                    onPause={pauseAutomationLoop}
-                    onResume={resumeAutomationLoop}
-                    onStop={stopAutomationLoop}
-                    plannedCount={automationQueue.length}
-                  />
-                </aside>
+                        key={value}
+                        id={tabId}
+                        role="tab"
+                        tabIndex={isActive ? 0 : -1}
+                        aria-selected={isActive}
+                        aria-controls={panelId}
+                        className={`${tabItemBaseClasses} ${
+                          isActive
+                            ? tabItemActiveClasses
+                            : tabItemInactiveClasses
+                        }`}
+                        onClick={() => handleSelectTab(value)}
+                        onKeyDown={(event) => handleTabKeyDown(value, event)}
+                      >
+                        {label}
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
+
+              {activeTab === "control" ? (
+                <div
+                  id={controlPanelId}
+                  role="tabpanel"
+                  aria-labelledby={controlTabId}
+                  className="space-y-8 p-8"
+                  aria-live="polite"
+                >
+                  <div className="grid gap-6 xl:grid-cols-[2fr_1fr] xl:items-start">
+                    <section className="space-y-6">
+                      <HighlightBadges
+                        figures={derived.figures}
+                        datasetValues={derived.datasetValues}
+                      />
+
+                      {isAutomationRunning ? (
+                        <div className="rounded-xl border border-emerald-100 bg-emerald-50 px-5 py-6 text-center text-sm text-emerald-700">
+                          자동 생성 루프가 실행 중입니다. 자동화가 종료되면 멀티
+                          프롬프트 입력 폼이 다시 표시됩니다.
+                        </div>
+                      ) : (
+                        <MultiPromptTable
+                          entries={entries}
+                          selectOptions={selectOptions}
+                          onChangePrompt={handleChangePrompt}
+                          onChangeRatio={handleChangeRatio}
+                          onChangeCount={handleChangeCount}
+                          onRemove={handleRemovePrompt}
+                          onAdd={handleAddPrompt}
+                          disabledAdd={!canAddMore}
+                        />
+                      )}
+                    </section>
+
+                    <aside className="space-y-6">
+                      <section className="space-y-4 rounded-2xl border border-slate-200 bg-white px-5 py-5 shadow-md shadow-slate-200/50">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="space-y-1">
+                            <p className="text-sm font-semibold text-slate-900">
+                              자동화 개요
+                            </p>
+                            <p className="text-xs text-slate-500">
+                              {automationStatusMeta.description}
+                            </p>
+                          </div>
+                          <span
+                            className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-semibold ${automationStatusMeta.badgeClass}`}
+                          >
+                            <span
+                              className={`h-2.5 w-2.5 rounded-full ${automationStatusMeta.dotClass}`}
+                              aria-hidden="true"
+                            />
+                            {automationStatusMeta.label}
+                          </span>
+                        </div>
+
+                        <div className="space-y-2 text-xs text-slate-600">
+                          <div className="flex justify-between">
+                            <span className="font-medium text-slate-700">
+                              상태 코드
+                            </span>
+                            <span>{automationStatusMeta.status}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="font-medium text-slate-700">
+                              예약된 생성
+                            </span>
+                            <span>{automationQueue.length}개</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="font-medium text-slate-700">
+                              진행 상황
+                            </span>
+                            <span>
+                              {automationStatusMeta.processedCount}/
+                              {automationStatusMeta.totalCount}
+                            </span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="font-medium text-slate-700">
+                              대기 중 아이템
+                            </span>
+                            <span>{automationState.activeCount}개</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="font-medium text-slate-700">
+                              남은 프롬프트
+                            </span>
+                            <span>{automationRemainingCount}개</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="font-medium text-slate-700">
+                              다음 재시도 시각
+                            </span>
+                            <span>{automationStatusMeta.nextRetryAt}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="font-medium text-slate-700">
+                              다음 프롬프트
+                            </span>
+                            <span className="max-w-[12rem] truncate text-right">
+                              {automationStatusMeta.nextPrompt ?? "-"}
+                            </span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="font-medium text-slate-700">
+                              마지막 오류
+                            </span>
+                            <span className="max-w-[12rem] truncate text-right">
+                              {automationState.lastError ?? "-"}
+                            </span>
+                          </div>
+                        </div>
+
+                        <div className="h-2 w-full overflow-hidden rounded-full bg-slate-200">
+                          <div
+                            className="h-full rounded-full bg-gradient-to-r from-emerald-400 via-emerald-500 to-emerald-600 transition-all"
+                            style={{
+                              width: `${automationStatusMeta.progressPercent}%`,
+                            }}
+                            aria-hidden="true"
+                          />
+                        </div>
+
+                        <div className="flex flex-wrap gap-2 text-xs">
+                          <button
+                            className={`${automationActionButtonClasses} px-3 py-2 text-sm`}
+                            onClick={handleResumeAutomation}
+                            disabled={
+                              automationState.status !== "paused" ||
+                              isAutomationActionProcessing
+                            }
+                            type="button"
+                          >
+                            재개
+                          </button>
+                          <button
+                            className={`${automationActionButtonClasses} px-3 py-2 text-sm`}
+                            onClick={handlePauseAutomation}
+                            disabled={
+                              automationState.status !== "running" ||
+                              isAutomationActionProcessing
+                            }
+                            type="button"
+                          >
+                            일시중단
+                          </button>
+                          <button
+                            className={`${automationStopButtonClasses} px-3 py-2 text-sm`}
+                            onClick={handleStopAutomation}
+                            disabled={
+                              automationState.status === "idle" ||
+                              isAutomationActionProcessing
+                            }
+                            type="button"
+                          >
+                            중단
+                          </button>
+                        </div>
+
+                        {automationActionMessage ? (
+                          <p className="text-sm font-medium text-emerald-600">
+                            {automationActionMessage}
+                          </p>
+                        ) : null}
+
+                        {automationActionError ? (
+                          <p className="text-sm font-medium text-rose-600">
+                            {automationActionError}
+                          </p>
+                        ) : automationError ? (
+                          <p className="text-sm font-medium text-rose-600">
+                            {automationError}
+                          </p>
+                        ) : null}
+                      </section>
+
+                      <GenerationPanel
+                        onPrepare={handleRequestGeneration}
+                        highlightInfo={highlightInfo}
+                        preparationMessage={preparationMessage}
+                        isConfirming={isConfirming}
+                        onConfirm={handleConfirmGeneration}
+                        onCancel={handleCancelGeneration}
+                        errorMessage={generationError}
+                      />
+                    </aside>
+                  </div>
+                </div>
+              ) : (
+                <div
+                  id={downloadPanelId}
+                  role="tabpanel"
+                  aria-labelledby={downloadTabId}
+                  className="p-8"
+                  aria-live="polite"
+                >
+                  <div className="rounded-2xl border border-dashed border-emerald-200 bg-emerald-50 px-8 py-12 text-center shadow-inner">
+                    <p className="text-sm font-semibold text-emerald-700">
+                      자동 다운로드 패널은 곧 제공될 예정입니다.
+                    </p>
+                    <p className="mt-2 text-xs text-emerald-600">
+                      향후 업데이트에서 자동 다운로드 기능을 구성할 계획입니다.
+                    </p>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
-        </div>
-      ) : null}
+        ) : null}
+      </div>
     </div>
   );
 };
