@@ -11,7 +11,7 @@
     "default_popup": "index.html",
     "default_title": "Higgsfield Automator"
   },
-  "permissions": ["storage", "scripting", "tabs", "alarms"],
+  "permissions": ["storage", "scripting", "tabs", "alarms", "downloads"],
   "content_scripts": [
     {
       "matches": [

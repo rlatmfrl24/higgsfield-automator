@@ -541,7 +541,13 @@ async function scheduleRetry() {
   const existingAlarm = await chrome.alarms.get(RETRY_ALARM_NAME);
 
   if (existingAlarm) {
-    return existingAlarm.when ?? null;
+    const scheduledTime = existingAlarm.scheduledTime ?? null;
+
+    if (scheduledTime !== automationState.nextRetryAt) {
+      await updateState({ nextRetryAt: scheduledTime });
+    }
+
+    return scheduledTime;
   }
 
   const when = Date.now() + RETRY_DELAY_MS;

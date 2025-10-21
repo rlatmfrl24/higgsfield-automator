@@ -1,4 +1,4 @@
-type MultiPromptTableProps = {
+export type MultiPromptTableProps = {
   entries: Array<{
     id: string;
     prompt: string;
