@@ -4,9 +4,9 @@ import type { ChangeEvent } from "react";
 import {
   getDownloadQueueFromCursor,
   getFirstFeedJobId,
-} from "../../../services/feed";
-import { useLiveRegion } from "../../../hooks/useLiveRegion";
-import { downloadJobImage } from "../../../services/downloads";
+} from "@infrastructure/services/feed";
+import { downloadJobImage } from "@infrastructure/services/downloads";
+import { useLiveRegion } from "@presentation/hooks/useLiveRegion";
 
 const baseButtonClasses =
   "inline-flex items-center justify-center rounded-xl font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-emerald-500 disabled:cursor-not-allowed disabled:opacity-60";

@@ -1,6 +1,6 @@
 /// <reference lib="dom" />
 
-import { TARGET_ORIGIN, TARGET_PATH, FORM_SELECTOR } from "../constants";
+import { TARGET_ORIGIN, TARGET_PATH, FORM_SELECTOR } from "./constants";
 
 const RETRY_ALARM_NAME = "automation:retry";
 const RETRY_DELAY_MS = 3000;

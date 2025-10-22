@@ -1,8 +1,8 @@
-import CheckingScreen from "./components/screens/CheckingScreen";
-import OffTargetScreen from "./components/screens/OffTargetScreen";
-import TargetScreen from "./components/screens/TargetScreen";
-import { useActiveTargetPage } from "./hooks/useActiveTargetPage";
-import { useFormSnapshot } from "./hooks/useFormSnapshot";
+import CheckingScreen from "@presentation/app/screens/CheckingScreen";
+import OffTargetScreen from "@presentation/app/screens/OffTargetScreen";
+import TargetScreen from "@presentation/app/screens/TargetScreen";
+import { useActiveTargetPage } from "@presentation/hooks/useActiveTargetPage";
+import { useFormSnapshot } from "@presentation/hooks/useFormSnapshot";
 
 function App() {
   const { isTargetPage, isChecking, moveToTargetPage } = useActiveTargetPage();

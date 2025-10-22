@@ -1,10 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import type { FieldSelection } from "./formData";
-import {
-  createEmptyMultiPromptEntries,
-  createMultiPromptEntry,
-} from "./multiPrompt";
+import { createMultiPromptEntry } from "./multiPrompt";
 import type { MultiPromptEntry } from "./multiPrompt";
 
 const MAX_PROMPT_ROW = 10;
@@ -64,7 +61,9 @@ export const useMultiPromptState = (
 ): UseMultiPromptStateResult => {
   const [ratioValue, setRatioValue] = useState("");
   const [entries, setEntries] = useState<MultiPromptEntry[]>(() =>
-    createEmptyMultiPromptEntries("").slice(0, DEFAULT_PROMPT_ROWS)
+    Array.from({ length: DEFAULT_PROMPT_ROWS }, () =>
+      createMultiPromptEntry("")
+    )
   );
 
   const ratioOptions = useMemo(
@@ -75,7 +74,12 @@ export const useMultiPromptState = (
   useEffect(() => {
     if (!ratioSelection) {
       setRatioValue("");
-      setEntries(createEmptyMultiPromptEntries(""));
+      setEntries((prev) =>
+        prev.map((entry) => ({
+          ...entry,
+          ratio: "",
+        }))
+      );
       return;
     }
 
@@ -86,10 +90,6 @@ export const useMultiPromptState = (
     setRatioValue(nextRatioValue ?? "");
 
     setEntries((prev) => {
-      if (!prev.length) {
-        return createEmptyMultiPromptEntries(nextRatioValue ?? "");
-      }
-
       return prev.map((entry) => ({
         ...entry,
         ratio: entry.ratio || nextRatioValue || "",

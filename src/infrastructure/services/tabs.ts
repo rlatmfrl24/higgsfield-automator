@@ -1,4 +1,8 @@
-import { ACTIVE_TAB_QUERY, TARGET_ORIGIN, TARGET_PATH } from "../constants";
+import {
+  ACTIVE_TAB_QUERY,
+  TARGET_ORIGIN,
+  TARGET_PATH,
+} from "@extension/constants";
 
 type BasicTabInfo = {
   id?: number;

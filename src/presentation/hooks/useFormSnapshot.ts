@@ -1,7 +1,7 @@
 import { useCallback, useState } from "react";
 
-import type { FormSnapshotPayload } from "../services/formSnapshot";
-import { captureActiveTabFormSnapshot } from "../services/formSnapshotExecutor";
+import type { FormSnapshotPayload } from "@infrastructure/services/formSnapshot";
+import { captureActiveTabFormSnapshot } from "@infrastructure/services/formSnapshotExecutor";
 
 type UseFormSnapshotResult = {
   payload: FormSnapshotPayload | null;

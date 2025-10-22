@@ -1,4 +1,4 @@
-import { FORM_SELECTOR } from "../constants";
+import { FORM_SELECTOR } from "@extension/constants";
 import { requireActiveTabId } from "./tabs";
 
 type UpdateFieldValueArgs = {

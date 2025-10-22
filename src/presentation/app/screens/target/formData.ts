@@ -1,4 +1,4 @@
-import type { FormSnapshotPayload } from "../../../services/formSnapshot";
+import type { FormSnapshotPayload } from "@infrastructure/services/formSnapshot";
 
 export type FieldSelection = {
   fieldIndex: number;

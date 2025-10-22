@@ -2,9 +2,9 @@ import type {
   FigureSnapshot,
   FormFieldSnapshot,
   FormSnapshotPayload,
-} from "../formSnapshot";
+} from "./formSnapshot";
 
-import { FORM_SELECTOR } from "../../constants";
+import { FORM_SELECTOR } from "@extension/constants";
 
 type ScriptResult =
   | {

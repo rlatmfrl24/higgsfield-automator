@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { checkActiveTabMatchesTarget } from "../services/tabs";
-import { navigateActiveTabToTargetPage } from "../services/navigation";
+import { checkActiveTabMatchesTarget } from "@infrastructure/services/tabs";
+import { navigateActiveTabToTargetPage } from "@infrastructure/services/navigation";
 
 type UseActiveTargetPageResult = {
   isTargetPage: boolean;

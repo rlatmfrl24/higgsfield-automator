@@ -6,11 +6,11 @@ import {
   type KeyboardEvent,
 } from "react";
 
-import type { FormSnapshotPayload } from "../../services/formSnapshot";
-import { updateActiveTabFieldValue } from "../../services/formControl";
-import { useLiveRegion } from "../../hooks/useLiveRegion";
+import type { FormSnapshotPayload } from "@infrastructure/services/formSnapshot";
+import { updateActiveTabFieldValue } from "@infrastructure/services/formControl";
+import { useLiveRegion } from "@presentation/hooks/useLiveRegion";
 import { ControlPanel } from "./target/ControlPanel";
-import { useAutomationState } from "../../hooks/useAutomationState";
+import { useAutomationState } from "@presentation/hooks/useAutomationState";
 import {
   deriveFormData,
   extractHighlightFromText,
