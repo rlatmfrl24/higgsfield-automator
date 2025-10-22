@@ -24,6 +24,9 @@ const listClasses =
 const queueItemButtonClasses =
   "rounded-lg px-3 py-1 text-xs font-semibold shadow transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-70";
 
+const queueActionButtonClasses =
+  "inline-flex items-center gap-1 rounded-lg border border-emerald-200 bg-white px-4 py-2 text-xs font-semibold text-emerald-600 shadow-sm shadow-emerald-100/60 transition hover:bg-emerald-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-70";
+
 type JobDownloadState = "idle" | "pending" | "success" | "error";
 
 const jobStateClasses: Record<JobDownloadState, string> = {
@@ -86,6 +89,23 @@ type DownloadState =
   | { type: "success"; jobId: string }
   | { type: "error"; jobId: string; message: string };
 
+type BulkDownloadState =
+  | { type: "idle" }
+  | { type: "running"; currentJobId: string; completed: number; total: number }
+  | { type: "success"; total: number; succeeded: number; failed: number }
+  | {
+      type: "error";
+      total: number;
+      succeeded: number;
+      failed: number;
+      message: string;
+    };
+
+type PerformDownloadResult =
+  | { status: "success"; jobId: string }
+  | { status: "error"; jobId: string; message: string }
+  | { status: "skipped"; jobId: string };
+
 type DownloadPanelProps = {
   panelId: string;
   labelledById: string;
@@ -114,6 +134,11 @@ export const DownloadPanel = ({
   const [jobDownloadStates, setJobDownloadStates] = useState<
     Record<string, JobDownloadState>
   >({});
+  const [bulkDownloadState, setBulkDownloadState] = useState<BulkDownloadState>(
+    {
+      type: "idle",
+    }
+  );
   const announce = useLiveRegion();
 
   useEffect(() => {
@@ -290,6 +315,28 @@ export const DownloadPanel = ({
     }
   }, [announce, downloadCursor]);
 
+  const performDownload = useCallback(
+    async (jobId: string): Promise<PerformDownloadResult> => {
+      const trimmedJobId = jobId.trim();
+
+      if (!trimmedJobId) {
+        return { status: "skipped", jobId };
+      }
+
+      try {
+        await downloadJobImage(trimmedJobId);
+        return { status: "success", jobId: trimmedJobId };
+      } catch (error) {
+        const message =
+          error instanceof Error
+            ? error.message
+            : "이미지 다운로드 중 알 수 없는 오류가 발생했습니다.";
+        return { status: "error", jobId: trimmedJobId, message };
+      }
+    },
+    []
+  );
+
   const handleDownload = useCallback(
     async (jobId: string) => {
       const trimmedJobId = jobId.trim();
@@ -305,8 +352,9 @@ export const DownloadPanel = ({
       }));
       announce(`${trimmedJobId} 이미지 다운로드를 준비합니다.`);
 
-      try {
-        await downloadJobImage(trimmedJobId);
+      const result = await performDownload(trimmedJobId);
+
+      if (result.status === "success") {
         setDownloadState({
           type: "success",
           jobId: trimmedJobId,
@@ -316,21 +364,207 @@ export const DownloadPanel = ({
           [trimmedJobId]: "success",
         }));
         announce(`${trimmedJobId} 이미지 다운로드를 시작했습니다.`);
-      } catch (error) {
-        const message =
-          error instanceof Error
-            ? error.message
-            : "이미지 다운로드 중 알 수 없는 오류가 발생했습니다.";
-        setDownloadState({ type: "error", jobId: trimmedJobId, message });
+        return;
+      }
+
+      if (result.status === "error") {
+        setDownloadState({
+          type: "error",
+          jobId: trimmedJobId,
+          message: result.message,
+        });
         setJobDownloadStates((previous) => ({
           ...previous,
           [trimmedJobId]: "error",
         }));
-        announce(`이미지 다운로드에 실패했습니다. ${message}`);
+        announce(`이미지 다운로드에 실패했습니다. ${result.message}`);
+        return;
       }
+
+      setDownloadState({ type: "idle" });
+      setJobDownloadStates((previous) => ({
+        ...previous,
+        [trimmedJobId]: "idle",
+      }));
     },
-    [announce]
+    [announce, performDownload]
   );
+
+  const handleBulkDownload = useCallback(async () => {
+    if (bulkDownloadState.type === "running") {
+      announce("이미 일괄 다운로드가 진행 중입니다.");
+      return;
+    }
+
+    const queueItems = [...queueStatus.items];
+
+    if (queueItems.length === 0) {
+      const message =
+        "다운로드 큐가 비어 있어 일괄 다운로드를 실행할 수 없습니다.";
+      setBulkDownloadState({
+        type: "error",
+        total: 0,
+        succeeded: 0,
+        failed: 0,
+        message,
+      });
+      announce(message);
+      return;
+    }
+
+    const effectiveQueue = queueItems
+      .map((item) => item.trim())
+      .filter((item) => item.length > 0);
+
+    if (effectiveQueue.length === 0) {
+      const message = "다운로드할 유효한 Job ID가 큐에 없습니다.";
+      setBulkDownloadState({
+        type: "error",
+        total: 0,
+        succeeded: 0,
+        failed: 0,
+        message,
+      });
+      announce(message);
+      return;
+    }
+
+    setBulkDownloadState({
+      type: "running",
+      currentJobId: "",
+      completed: 0,
+      total: effectiveQueue.length,
+    });
+    setDownloadState({ type: "idle" });
+    announce("다운로드 큐 일괄 다운로드를 시작합니다.");
+
+    let succeeded = 0;
+    let failed = 0;
+    const jobResults: PerformDownloadResult[] = [];
+
+    for (const jobId of effectiveQueue) {
+      setBulkDownloadState((previous) => {
+        if (previous.type !== "running") {
+          return previous;
+        }
+
+        return {
+          ...previous,
+          currentJobId: jobId,
+        };
+      });
+
+      setJobDownloadStates((previous) => ({
+        ...previous,
+        [jobId]: "pending",
+      }));
+
+      const result = await performDownload(jobId);
+      jobResults.push(result);
+
+      if (result.status === "success") {
+        succeeded += 1;
+        setJobDownloadStates((previous) => ({
+          ...previous,
+          [jobId]: "success",
+        }));
+      } else if (result.status === "error") {
+        failed += 1;
+        setJobDownloadStates((previous) => ({
+          ...previous,
+          [jobId]: "error",
+        }));
+      } else {
+        setJobDownloadStates((previous) => ({
+          ...previous,
+          [jobId]: "idle",
+        }));
+      }
+
+      setBulkDownloadState((previous) => {
+        if (previous.type !== "running") {
+          return previous;
+        }
+
+        return {
+          ...previous,
+          completed: Math.min(previous.completed + 1, previous.total),
+        };
+      });
+    }
+
+    if (failed > 0) {
+      const failedItems = jobResults.filter(
+        (
+          result
+        ): result is Extract<PerformDownloadResult, { status: "error" }> =>
+          result.status === "error"
+      );
+      const failedSummary = failedItems
+        .map((item) => `${item.jobId}: ${item.message}`)
+        .join("; ");
+      const message =
+        failedSummary.length > 0
+          ? `총 ${effectiveQueue.length}개 중 ${failed}개 다운로드에 실패했습니다. (${failedSummary})`
+          : `총 ${effectiveQueue.length}개 중 ${failed}개 다운로드에 실패했습니다.`;
+      setBulkDownloadState({
+        type: "error",
+        total: effectiveQueue.length,
+        succeeded,
+        failed,
+        message,
+      });
+      announce(message);
+      return;
+    }
+
+    setBulkDownloadState({
+      type: "success",
+      total: effectiveQueue.length,
+      succeeded,
+      failed,
+    });
+    announce(`총 ${succeeded}개 항목의 다운로드를 요청했습니다.`);
+  }, [announce, bulkDownloadState.type, performDownload, queueStatus.items]);
+
+  const bulkButtonLabel = useMemo(() => {
+    if (bulkDownloadState.type === "running") {
+      return `모두 다운로드 (${bulkDownloadState.completed}/${bulkDownloadState.total})`;
+    }
+
+    return "모두 다운로드";
+  }, [bulkDownloadState]);
+
+  const bulkStatusVariant = useMemo(() => {
+    if (bulkDownloadState.type === "error") {
+      return "error" as const;
+    }
+
+    if (bulkDownloadState.type === "success") {
+      return "success" as const;
+    }
+
+    return "neutral" as const;
+  }, [bulkDownloadState.type]);
+
+  const bulkDownloadStatusMessage = useMemo(() => {
+    switch (bulkDownloadState.type) {
+      case "idle":
+        return "다운로드 큐 전체를 한 번에 다운로드할 수 있습니다.";
+      case "running":
+        return bulkDownloadState.currentJobId
+          ? `일괄 다운로드 진행 중입니다. (${bulkDownloadState.completed}/${bulkDownloadState.total}) · 현재: ${bulkDownloadState.currentJobId}`
+          : `일괄 다운로드 진행 중입니다. (${bulkDownloadState.completed}/${bulkDownloadState.total})`;
+      case "success":
+        return `일괄 다운로드를 완료했습니다. 총 ${bulkDownloadState.total}개 중 ${bulkDownloadState.succeeded}개 다운로드를 요청했습니다.`;
+      case "error":
+        return `일괄 다운로드 중 문제가 발생했습니다. ${bulkDownloadState.message} (성공 ${bulkDownloadState.succeeded}개)`;
+      default:
+        return "";
+    }
+  }, [bulkDownloadState]);
+
+  const bulkDownloadStatusClassName = statusStyles[bulkStatusVariant];
 
   const downloadStatusMessage = useMemo(() => {
     switch (downloadState.type) {
@@ -415,6 +649,32 @@ export const DownloadPanel = ({
             {queueStatus.message}
           </p>
         ) : null}
+        {queueStatus.items.length > 0 ? (
+          <div className={bulkDownloadStatusClassName}>
+            <div className="flex items-center justify-between gap-4">
+              <div className="flex flex-col gap-1 text-xs">
+                <span className="font-semibold text-emerald-700">
+                  일괄 다운로드
+                </span>
+                <span className="text-emerald-700">
+                  {bulkDownloadStatusMessage}
+                </span>
+              </div>
+              <button
+                type="button"
+                className={queueActionButtonClasses}
+                onClick={handleBulkDownload}
+                disabled={
+                  bulkDownloadState.type === "running" ||
+                  queueStatus.type === "loading" ||
+                  queueStatus.items.length === 0
+                }
+              >
+                {bulkButtonLabel}
+              </button>
+            </div>
+          </div>
+        ) : null}
         <div className={listClasses}>
           {queueStatus.items.length === 0 ? (
             <p className="text-xs text-emerald-600">
@@ -431,6 +691,7 @@ export const DownloadPanel = ({
                 onClick={() => handleDownload(jobId)}
                 disabled={
                   globalDownloadPending ||
+                  bulkDownloadState.type === "running" ||
                   (jobDownloadStates[jobId] ?? "idle") === "pending"
                 }
                 aria-busy={(jobDownloadStates[jobId] ?? "idle") === "pending"}
