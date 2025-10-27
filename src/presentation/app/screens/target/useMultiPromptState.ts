@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type { FieldSelection } from "./formData";
 import { createMultiPromptEntry } from "./multiPrompt";
@@ -6,6 +6,50 @@ import type { MultiPromptEntry } from "./multiPrompt";
 
 const MAX_PROMPT_ROW = 10;
 const DEFAULT_PROMPT_ROWS = 2;
+const STORAGE_KEY = "higgsfield:multiPromptState";
+const STORAGE_VERSION = 1;
+
+type MultiPromptStoredEntry = Partial<MultiPromptEntry> | null | undefined;
+type MultiPromptStoredState = {
+  version?: number;
+  ratioValue?: string;
+  entries?: MultiPromptStoredEntry[];
+};
+
+const isStorageAvailable = () =>
+  typeof chrome !== "undefined" && typeof chrome.storage?.local !== "undefined";
+
+const normaliseStoredEntry = (
+  stored: MultiPromptStoredEntry,
+  fallbackRatio: string
+): MultiPromptEntry => {
+  const fallback = createMultiPromptEntry(fallbackRatio);
+
+  if (!stored || typeof stored !== "object") {
+    return fallback;
+  }
+
+  const candidate = stored as Partial<MultiPromptEntry>;
+
+  return {
+    id:
+      typeof candidate.id === "string" && candidate.id.trim().length
+        ? candidate.id
+        : fallback.id,
+    prompt:
+      typeof candidate.prompt === "string" ? candidate.prompt : fallback.prompt,
+    ratio:
+      typeof candidate.ratio === "string"
+        ? candidate.ratio
+        : typeof fallbackRatio === "string"
+        ? fallbackRatio
+        : fallback.ratio,
+    count:
+      typeof candidate.count === "string" && candidate.count.trim().length
+        ? candidate.count
+        : fallback.count,
+  };
+};
 
 export type UseMultiPromptStateResult = {
   ratioValue: string;
@@ -59,12 +103,88 @@ const toSelectOptions = (
 export const useMultiPromptState = (
   ratioSelection: FieldSelection | undefined
 ): UseMultiPromptStateResult => {
+  const storageSupportedRef = useRef(isStorageAvailable());
+  const storageSupported = storageSupportedRef.current;
+  const hasHydratedRef = useRef(!storageSupported);
   const [ratioValue, setRatioValue] = useState("");
   const [entries, setEntries] = useState<MultiPromptEntry[]>(() =>
     Array.from({ length: DEFAULT_PROMPT_ROWS }, () =>
       createMultiPromptEntry("")
     )
   );
+
+  useEffect(() => {
+    if (!storageSupported) {
+      return;
+    }
+
+    let cancelled = false;
+
+    chrome.storage.local.get([STORAGE_KEY], (result) => {
+      if (cancelled) {
+        return;
+      }
+
+      const lastError = chrome.runtime.lastError;
+
+      if (!lastError) {
+        const stored = result?.[STORAGE_KEY] as
+          | MultiPromptStoredState
+          | undefined;
+
+        const versionIsCompatible =
+          typeof stored?.version !== "number" ||
+          stored.version === STORAGE_VERSION;
+
+        if (stored && versionIsCompatible) {
+          const storedRatio =
+            typeof stored.ratioValue === "string" ? stored.ratioValue : "";
+
+          const storedEntries = Array.isArray(stored.entries)
+            ? stored.entries
+            : [];
+
+          let nextEntries = storedEntries
+            .map((entry) => normaliseStoredEntry(entry, storedRatio || ""))
+            .slice(0, MAX_PROMPT_ROW);
+
+          if (!nextEntries.length) {
+            nextEntries = Array.from({ length: DEFAULT_PROMPT_ROWS }, () =>
+              createMultiPromptEntry(storedRatio || "")
+            );
+          }
+
+          setRatioValue(storedRatio ?? "");
+          setEntries(nextEntries);
+        }
+      }
+
+      hasHydratedRef.current = true;
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [storageSupported]);
+
+  useEffect(() => {
+    if (!storageSupported || !hasHydratedRef.current) {
+      return;
+    }
+
+    const payload: MultiPromptStoredState = {
+      version: STORAGE_VERSION,
+      ratioValue: ratioValue ?? "",
+      entries: entries.map((entry) => ({
+        id: entry.id,
+        prompt: entry.prompt,
+        ratio: entry.ratio,
+        count: entry.count,
+      })),
+    };
+
+    chrome.storage.local.set({ [STORAGE_KEY]: payload });
+  }, [storageSupported, ratioValue, entries]);
 
   const ratioOptions = useMemo(
     () => filterRatioOptions(ratioSelection?.options),

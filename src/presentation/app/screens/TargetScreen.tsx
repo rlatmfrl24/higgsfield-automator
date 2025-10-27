@@ -20,17 +20,16 @@ import {
   buildSuccessAnnouncement,
   SUCCESS_PREPARATION_MESSAGE,
 } from "./target/messages";
-import {
-  createMultiPromptEntry,
-  hasNonEmptyString,
-  isPositiveIntegerString,
-} from "./target/multiPrompt";
 import { useMultiPromptState } from "./target/useMultiPromptState";
 import {
   validateMultiPromptEntries,
   validatePreparation,
 } from "./target/validation";
 import { DownloadPanel } from "./target/DownloadPanel";
+import {
+  hasNonEmptyString,
+  isPositiveIntegerString,
+} from "./target/multiPrompt";
 
 type TargetScreenProps = {
   isReadingForm: boolean;
@@ -58,20 +57,6 @@ export const TargetScreen = ({
     updateEntry,
     canAddMore,
   } = useMultiPromptState(derived?.ratio);
-
-  useEffect(() => {
-    if (!derived) {
-      return;
-    }
-
-    if (entries.length === 0) {
-      const initialCount = Math.max(2, entries.length);
-      const nextEntries = Array.from({ length: initialCount }).map(() =>
-        createMultiPromptEntry(derived.ratio?.value ?? "")
-      );
-      setEntries(nextEntries);
-    }
-  }, [derived, entries.length, setEntries]);
 
   const [isConfirming, setIsConfirming] = useState(false);
   const [generationError, setGenerationError] = useState<string | null>(null);

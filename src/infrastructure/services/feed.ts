@@ -84,7 +84,7 @@ const collectJobIdsFromCursor = async (
     new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
   const waitForSettled = async () => {
     await waitForNextFrame();
-    await sleep(60);
+    await sleep(120);
   };
 
   const resolveScrollContainer = () => {
@@ -109,6 +109,105 @@ const collectJobIdsFromCursor = async (
   };
 
   const scrollContainer = resolveScrollContainer();
+
+  const getViewportHeight = () => {
+    if (scrollContainer instanceof HTMLElement) {
+      return scrollContainer.clientHeight;
+    }
+
+    return (
+      window.innerHeight ||
+      document.documentElement?.clientHeight ||
+      document.body?.clientHeight ||
+      0
+    );
+  };
+
+  const getScrollHeight = () => {
+    if (scrollContainer instanceof HTMLElement) {
+      return scrollContainer.scrollHeight;
+    }
+
+    const element =
+      document.scrollingElement ??
+      (document.documentElement instanceof HTMLElement
+        ? document.documentElement
+        : document.body instanceof HTMLElement
+        ? document.body
+        : null);
+
+    return element?.scrollHeight ?? 0;
+  };
+
+  const getScrollTop = () => {
+    if (scrollContainer instanceof HTMLElement) {
+      return scrollContainer.scrollTop;
+    }
+
+    return (
+      window.scrollY ||
+      document.scrollingElement?.scrollTop ||
+      document.documentElement?.scrollTop ||
+      document.body?.scrollTop ||
+      0
+    );
+  };
+
+  const getMaxScrollTop = () => {
+    const viewportHeight = getViewportHeight();
+    const scrollHeight = getScrollHeight();
+    return Math.max(0, scrollHeight - viewportHeight);
+  };
+
+  const setScrollTop = (nextTop: number) => {
+    if (scrollContainer instanceof HTMLElement) {
+      scrollContainer.scrollTop = nextTop;
+      return;
+    }
+
+    window.scrollTo({ top: nextTop, behavior: "auto" });
+
+    const element =
+      document.scrollingElement ??
+      (document.documentElement instanceof HTMLElement
+        ? document.documentElement
+        : document.body instanceof HTMLElement
+        ? document.body
+        : null);
+
+    if (element) {
+      element.scrollTop = nextTop;
+    }
+  };
+
+  const isAtTop = () => getScrollTop() <= 1;
+
+  const isAtBottom = () => {
+    if (scrollContainer instanceof HTMLElement) {
+      return (
+        scrollContainer.scrollHeight <= scrollContainer.clientHeight + 2 ||
+        scrollContainer.scrollTop >=
+          scrollContainer.scrollHeight - scrollContainer.clientHeight - 1
+      );
+    }
+
+    const element =
+      document.scrollingElement ??
+      (document.documentElement instanceof HTMLElement
+        ? document.documentElement
+        : document.body instanceof HTMLElement
+        ? document.body
+        : null);
+
+    if (!element) {
+      return true;
+    }
+
+    const viewportHeight = getViewportHeight();
+    const remaining =
+      element.scrollHeight - (element.scrollTop + viewportHeight);
+    return remaining <= 2;
+  };
 
   const getItems = () => Array.from(feedRoot.querySelectorAll(itemSelector));
 
@@ -145,50 +244,78 @@ const collectJobIdsFromCursor = async (
   };
 
   const scrollDownStep = () => {
-    if (scrollContainer instanceof HTMLElement) {
-      if (scrollContainer.scrollHeight <= scrollContainer.clientHeight + 2) {
-        window.scrollBy({ top: window.innerHeight, behavior: "auto" });
-        return;
-      }
+    const viewportHeight = getViewportHeight();
+    const maxTop = getMaxScrollTop();
+    const currentTop = getScrollTop();
 
-      const delta = Math.max(scrollContainer.clientHeight * 0.9, 240);
-      const nextTop = Math.min(
-        scrollContainer.scrollHeight - scrollContainer.clientHeight,
-        scrollContainer.scrollTop + delta
-      );
-      scrollContainer.scrollTop = nextTop;
-      return;
+    if (maxTop <= 0 || currentTop >= maxTop - 1) {
+      return false;
     }
 
-    window.scrollBy({ top: window.innerHeight, behavior: "auto" });
+    const delta = Math.max(viewportHeight * 0.9, 240);
+    const nextTop = Math.min(maxTop, currentTop + delta);
+
+    if (Math.abs(nextTop - currentTop) < 1) {
+      return false;
+    }
+
+    setScrollTop(nextTop);
+    return true;
   };
 
   const scrollUpStep = () => {
-    if (scrollContainer instanceof HTMLElement) {
-      if (scrollContainer.scrollHeight <= scrollContainer.clientHeight + 2) {
-        window.scrollBy({ top: -window.innerHeight, behavior: "auto" });
-        return;
-      }
+    const viewportHeight = getViewportHeight();
+    const currentTop = getScrollTop();
 
-      const delta = Math.max(scrollContainer.clientHeight * 0.9, 240);
-      const nextTop = Math.max(0, scrollContainer.scrollTop - delta);
-      scrollContainer.scrollTop = nextTop;
-      return;
+    if (currentTop <= 1) {
+      return false;
     }
 
-    window.scrollBy({ top: -window.innerHeight, behavior: "auto" });
+    const delta = Math.max(viewportHeight * 0.9, 240);
+    const nextTop = Math.max(0, currentTop - delta);
+
+    if (Math.abs(currentTop - nextTop) < 1) {
+      setScrollTop(0);
+      return false;
+    }
+
+    setScrollTop(nextTop);
+    return true;
   };
 
   if (shouldFindCursor) {
     let cursorLocated = cursorElementExists();
-    const maxDownAttempts = 30;
+    const maxDownAttempts = 180;
     let attempts = 0;
+    let stagnantCount = 0;
 
     while (!cursorLocated && attempts < maxDownAttempts) {
       attempts += 1;
-      scrollDownStep();
+      const beforeTop = getScrollTop();
+      const beforeItemCount = getItems().length;
+      const moved = scrollDownStep();
       await waitForSettled();
       cursorLocated = cursorElementExists();
+
+      const afterTop = getScrollTop();
+      const afterItemCount = getItems().length;
+
+      if (!moved && isAtBottom()) {
+        break;
+      }
+
+      if (
+        Math.abs(afterTop - beforeTop) < 1 &&
+        afterItemCount <= beforeItemCount
+      ) {
+        stagnantCount += 1;
+      } else {
+        stagnantCount = 0;
+      }
+
+      if (stagnantCount >= 3 && isAtBottom()) {
+        break;
+      }
     }
 
     if (!cursorLocated) {
@@ -203,8 +330,9 @@ const collectJobIdsFromCursor = async (
 
   let jobQueue: string[] = [];
   const seenJobIds = new Set<string>();
-  const maxUpAttempts = 60;
+  const maxUpAttempts = 180;
   let attempts = 0;
+  let stagnantUpCount = 0;
   let cursorSeenAtLeastOnce = !shouldFindCursor;
 
   const processVisibleItems = () => {
@@ -252,10 +380,7 @@ const collectJobIdsFromCursor = async (
       cursorSeenAtLeastOnce = true;
     }
 
-    const atTop =
-      !(scrollContainer instanceof HTMLElement) ||
-      scrollContainer.scrollTop <= 0 ||
-      scrollContainer.scrollHeight <= scrollContainer.clientHeight + 2;
+    const atTop = isAtTop() || getScrollHeight() <= getViewportHeight() + 2;
 
     if (atTop) {
       if (!added) {
@@ -266,19 +391,29 @@ const collectJobIdsFromCursor = async (
       continue;
     }
 
-    const previousTop =
-      scrollContainer instanceof HTMLElement ? scrollContainer.scrollTop : 0;
-
-    scrollUpStep();
+    const previousTop = getScrollTop();
+    const previousItemCount = getItems().length;
+    const moved = scrollUpStep();
     await waitForSettled();
+    const currentTop = getScrollTop();
+    const currentItemCount = getItems().length;
+
+    if (moved) {
+      stagnantUpCount = 0;
+      continue;
+    }
 
     if (
-      scrollContainer instanceof HTMLElement &&
-      Math.abs(scrollContainer.scrollTop - previousTop) < 1
+      Math.abs(currentTop - previousTop) < 1 &&
+      currentItemCount <= previousItemCount
     ) {
-      if (!added) {
-        break;
-      }
+      stagnantUpCount += 1;
+    } else {
+      stagnantUpCount = 0;
+    }
+
+    if (!added && stagnantUpCount >= 3) {
+      break;
     }
   }
 
