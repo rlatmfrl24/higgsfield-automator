@@ -18,6 +18,7 @@ import {
   validateMultiPromptEntries,
   validatePreparation,
 } from "./target/validation";
+import { AutomationPanel } from "./target/AutomationPanel";
 import { ControlPanel } from "./target/ControlPanel";
 import {
   hasNonEmptyString,
@@ -29,6 +30,7 @@ type TargetScreenProps = {
   formReadError: string | null;
   formPayload: FormSnapshotPayload | null;
   onReadForm: () => void;
+  onOpenStandaloneMultiPrompt?: () => void;
 };
 
 export const TargetScreen = ({
@@ -36,6 +38,7 @@ export const TargetScreen = ({
   formReadError,
   formPayload,
   onReadForm,
+  onOpenStandaloneMultiPrompt,
 }: TargetScreenProps) => {
   const announce = useLiveRegion();
   const derived = useMemo(() => deriveFormData(formPayload), [formPayload]);
@@ -44,11 +47,6 @@ export const TargetScreen = ({
     setRatioValue,
     entries,
     setEntries,
-    selectOptions,
-    addEntry,
-    removeEntry,
-    updateEntry,
-    canAddMore,
   } = useMultiPromptState(derived?.ratio);
 
   const [isConfirming, setIsConfirming] = useState(false);
@@ -129,12 +127,6 @@ export const TargetScreen = ({
 
     return null;
   }, [derived]);
-
-  const resetMessages = useCallback(() => {
-    setPreparationMessage(null);
-    setGenerationError(null);
-    setIsConfirming(false);
-  }, []);
 
   const failPreparation = useCallback(
     (message: string) => {
@@ -314,43 +306,6 @@ export const TargetScreen = ({
     }
   }, [buildAutomationPayload, failPreparation, startAutomationLoop]);
 
-  const handleAddPrompt = useCallback(() => {
-    resetMessages();
-    addEntry();
-  }, [addEntry, resetMessages]);
-
-  const handleRemovePrompt = useCallback(
-    (id: string) => {
-      resetMessages();
-      removeEntry(id);
-    },
-    [removeEntry, resetMessages]
-  );
-
-  const handleChangePrompt = useCallback(
-    (id: string, value: string) => {
-      resetMessages();
-      updateEntry(id, { prompt: value });
-    },
-    [resetMessages, updateEntry]
-  );
-
-  const handleChangeRatio = useCallback(
-    (id: string, value: string) => {
-      resetMessages();
-      updateEntry(id, { ratio: value });
-    },
-    [resetMessages, updateEntry]
-  );
-
-  const handleChangeCount = useCallback(
-    (id: string, value: string) => {
-      resetMessages();
-      updateEntry(id, { count: value });
-    },
-    [resetMessages, updateEntry]
-  );
-
   const formatTimeLabel = useCallback((timestamp: number | null) => {
     if (!timestamp) {
       return "-";
@@ -467,7 +422,8 @@ export const TargetScreen = ({
   const primaryButtonClasses = `${baseButtonClasses} bg-gradient-to-r from-emerald-400 to-emerald-500 text-white shadow-lg shadow-emerald-200/60 hover:from-emerald-500 hover:to-emerald-600 active:from-emerald-600 active:to-emerald-600`;
   const secondaryButtonClasses = `${baseButtonClasses} border border-emerald-200 bg-white text-emerald-600 shadow-sm shadow-emerald-100/60 hover:bg-emerald-50 active:bg-emerald-100`;
   const controlSectionHeadingId = "target-screen-section-control-heading";
-  const controlPanelId = "target-screen-panel-control";
+  const generationPanelId = "target-screen-panel-generation";
+  const automationPanelId = "target-screen-panel-automation";
 
   return (
     <div className="flex min-h-screen w-full justify-center bg-slate-50 px-4 py-10 text-slate-800 sm:px-6">
@@ -501,64 +457,77 @@ export const TargetScreen = ({
               ? "자동화 상태 동기화 중..."
               : "자동화 상태 새로고침"}
           </button>
+          {onOpenStandaloneMultiPrompt ? (
+            <button
+              className={`${secondaryButtonClasses} px-5 py-3 text-sm`}
+              onClick={onOpenStandaloneMultiPrompt}
+              type="button"
+            >
+              멀티 프롬프트 독립 화면
+            </button>
+          ) : null}
         </div>
 
         {formReadError ? (
           <p className="text-sm font-semibold text-rose-600">{formReadError}</p>
         ) : null}
 
-        {derived ? (
-          <div className="w-full">
-            <div className="w-full overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-lg shadow-slate-200/60">
-              <div className="border-b border-slate-200 bg-gradient-to-r from-emerald-50 via-white to-emerald-50 px-6 py-5">
-                <h2
-                  id={controlSectionHeadingId}
-                  className="text-lg font-semibold text-emerald-700"
-                >
-                  폼 제어 패널
-                </h2>
-                <p className="mt-1 text-sm text-emerald-600">
-                  자동 생성 루프 실행을 위한 프롬프트와 설정을 구성하세요.
+        <div className="w-full">
+          <div className="w-full overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-lg shadow-slate-200/60">
+            <div className="border-b border-slate-200 bg-gradient-to-r from-emerald-50 via-white to-emerald-50 px-6 py-5">
+              <h2
+                id={controlSectionHeadingId}
+                className="text-lg font-semibold text-emerald-700"
+              >
+                폼 제어 패널
+              </h2>
+              <p className="mt-1 text-sm text-emerald-600">
+                자동 생성 요청과 멀티 프롬프트 요약 정보를 확인하세요.
+              </p>
+              {!derived ? (
+                <p className="mt-2 text-xs text-emerald-600">
+                  아직 폼 데이터를 읽지 않았습니다. 필요한 경우 언제든지
+                  "폼 데이터 화면 출력" 버튼으로 동기화할 수 있습니다.
                 </p>
-              </div>
-
-              <ControlPanel
-                panelId={controlPanelId}
-                labelledById={controlSectionHeadingId}
-                figures={derived.figures}
-                datasetValues={derived.datasetValues}
-                isAutomationRunning={isAutomationRunning}
-                entries={entries}
-                selectOptions={selectOptions}
-                onAddPrompt={handleAddPrompt}
-                onRemovePrompt={handleRemovePrompt}
-                onChangePrompt={handleChangePrompt}
-                onChangeRatio={handleChangeRatio}
-                onChangeCount={handleChangeCount}
-                canAddMore={canAddMore}
-                automationQueueLength={automationQueue.length}
-                automationActiveCount={automationState.activeCount}
-                automationRemainingCount={automationRemainingCount}
-                automationLastError={automationState.lastError ?? null}
-                automationStatusMeta={automationStatusMeta}
-                automationActionMessage={automationActionMessage}
-                automationActionError={automationActionError}
-                automationError={automationError}
-                isAutomationActionProcessing={isAutomationActionProcessing}
-                onResumeAutomation={handleResumeAutomation}
-                onPauseAutomation={handlePauseAutomation}
-                onStopAutomation={handleStopAutomation}
-                highlightInfo={highlightInfo}
-                onPrepareGeneration={handleRequestGeneration}
-                preparationMessage={preparationMessage}
-                isConfirming={isConfirming}
-                onConfirmGeneration={handleConfirmGeneration}
-                onCancelGeneration={handleCancelGeneration}
-                generationError={generationError}
-              />
+              ) : null}
             </div>
+
+            <ControlPanel
+              panelId={generationPanelId}
+              labelledById={controlSectionHeadingId}
+              highlightInfo={highlightInfo}
+              onPrepareGeneration={handleRequestGeneration}
+              preparationMessage={preparationMessage}
+              isConfirming={isConfirming}
+              onConfirmGeneration={handleConfirmGeneration}
+              onCancelGeneration={handleCancelGeneration}
+              generationError={generationError}
+            />
+
+            <AutomationPanel
+              panelId={automationPanelId}
+              labelledById={controlSectionHeadingId}
+              figures={derived?.figures ?? []}
+              datasetValues={derived?.datasetValues ?? {}}
+              isAutomationRunning={isAutomationRunning}
+              entries={entries}
+              automationQueueLength={automationQueue.length}
+              automationActiveCount={automationState.activeCount}
+              automationRemainingCount={automationRemainingCount}
+              automationLastError={automationState.lastError ?? null}
+              automationStatusMeta={automationStatusMeta}
+              automationActionMessage={automationActionMessage}
+              automationActionError={automationActionError}
+              automationError={automationError}
+              isAutomationActionProcessing={isAutomationActionProcessing}
+              onResumeAutomation={handleResumeAutomation}
+              onPauseAutomation={handlePauseAutomation}
+              onStopAutomation={handleStopAutomation}
+              isFormDataReady={Boolean(derived)}
+              onOpenStandalone={onOpenStandaloneMultiPrompt}
+            />
           </div>
-        ) : null}
+        </div>
       </div>
     </div>
   );

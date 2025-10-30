@@ -28,7 +28,7 @@ type DatasetDisplayConfig = {
   datasetKey: string;
 };
 
-const HIGHLIGHT_PATTERN = /Generate(\d+)\s*Daily free credits left/i;
+const HIGHLIGHT_PHRASES = ["daily free credits left", "free credits left"];
 
 const DATASET_DISPLAY_CONFIG: DatasetDisplayConfig[] = [
   {
@@ -96,16 +96,34 @@ const addUniqueFigureText = (
   }
 };
 
+const containsHighlightPhrase = (text: string) =>
+  HIGHLIGHT_PHRASES.some((phrase) => text.toLowerCase().includes(phrase));
+
 export const extractHighlightFromText = (
   text: string
 ): CreditHighlight | null => {
-  const match = text.match(HIGHLIGHT_PATTERN);
-
-  if (!match) {
+  if (!text) {
     return null;
   }
 
-  const amount = match[1];
+  const lower = text.toLowerCase();
+  const matchedPhrase = HIGHLIGHT_PHRASES.find((phrase) =>
+    lower.includes(phrase)
+  );
+
+  if (!matchedPhrase) {
+    return null;
+  }
+
+  const phraseIndex = lower.indexOf(matchedPhrase);
+  const beforePhrase = text.slice(0, phraseIndex);
+  const numberMatches = beforePhrase.match(/\d+/g);
+
+  if (!numberMatches || numberMatches.length === 0) {
+    return null;
+  }
+
+  const amount = numberMatches[numberMatches.length - 1];
 
   return {
     amount,
@@ -160,7 +178,7 @@ export const deriveFormData = (
     return null;
   }
 
-  const { fields, figures, values } = payload;
+  const { fields, figures, values, highlights } = payload;
 
   const prompt = extractFieldSelection(
     fields,
@@ -217,10 +235,22 @@ export const deriveFormData = (
   const figureTexts: string[] = [];
 
   figures.forEach((figure) => {
-    addUniqueFigureText(figureTexts, figure.textContent);
-    addUniqueFigureText(figureTexts, figure.figcaption);
-    figure.siblings?.forEach((text) => addUniqueFigureText(figureTexts, text));
+    if (!containsHighlightPhrase(figure.textContent ?? "")) {
+      addUniqueFigureText(figureTexts, figure.textContent);
+    }
+
+    if (!containsHighlightPhrase(figure.figcaption ?? "")) {
+      addUniqueFigureText(figureTexts, figure.figcaption);
+    }
+
+    figure.siblings?.forEach((text) => {
+      if (!containsHighlightPhrase(text ?? "")) {
+        addUniqueFigureText(figureTexts, text);
+      }
+    });
   });
+
+  highlights?.forEach((text) => addUniqueFigureText(figureTexts, text));
 
   const datasetValues: Record<string, string> = {};
 

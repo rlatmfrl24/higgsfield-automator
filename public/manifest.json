@@ -8,10 +8,19 @@
     "type": "module"
   },
   "action": {
-    "default_popup": "index.html",
     "default_title": "Higgsfield Automator"
   },
-  "permissions": ["storage", "scripting", "tabs", "alarms", "downloads"],
+  "side_panel": {
+    "default_path": "index.html"
+  },
+  "permissions": [
+    "storage",
+    "scripting",
+    "tabs",
+    "alarms",
+    "downloads",
+    "sidePanel"
+  ],
   "content_scripts": [
     {
       "matches": [
