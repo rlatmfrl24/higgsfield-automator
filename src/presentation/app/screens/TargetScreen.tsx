@@ -1,7 +1,11 @@
-import { useCallback, useMemo, useState, useEffect } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import type { FormSnapshotPayload } from "@infrastructure/services/formSnapshot";
 import { updateActiveTabFieldValue } from "@infrastructure/services/formControl";
+import {
+  getTargetPagePrivacyMode,
+  setTargetPagePrivacyMode,
+} from "@infrastructure/services/privacyMode";
 import { useLiveRegion } from "@presentation/hooks/useLiveRegion";
 import { useAutomationState } from "@presentation/hooks/useAutomationState";
 import {
@@ -48,6 +52,70 @@ export const TargetScreen = ({
     entries,
     setEntries,
   } = useMultiPromptState(derived?.ratio);
+
+  const [isPrivacyMode, setIsPrivacyMode] = useState(false);
+  const [isPrivacyProcessing, setIsPrivacyProcessing] = useState(false);
+  const [privacyError, setPrivacyError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const syncPrivacyState = async () => {
+      setIsPrivacyProcessing(true);
+
+      try {
+        const enabled = await getTargetPagePrivacyMode();
+
+        if (!cancelled) {
+          setIsPrivacyMode(enabled);
+          setPrivacyError(null);
+        }
+      } catch (error) {
+        console.error("타겟 페이지 사생활 보호 상태 확인 실패", error);
+
+        if (!cancelled) {
+          setIsPrivacyMode(false);
+        }
+      } finally {
+        if (!cancelled) {
+          setIsPrivacyProcessing(false);
+        }
+      }
+    };
+
+    void syncPrivacyState();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const applyPrivacyMode = useCallback(async (nextMode: boolean) => {
+    setIsPrivacyProcessing(true);
+    setPrivacyError(null);
+
+    try {
+      await setTargetPagePrivacyMode(nextMode);
+      setIsPrivacyMode(nextMode);
+    } catch (error) {
+      console.error("타겟 페이지 사생활 보호 적용 실패", error);
+      const message =
+        error instanceof Error
+          ? error.message
+          : "타겟 페이지에 사생활 보호 효과를 적용하지 못했습니다.";
+      setPrivacyError(message);
+    } finally {
+      setIsPrivacyProcessing(false);
+    }
+  }, []);
+
+  const togglePrivacyMode = useCallback(() => {
+    if (isPrivacyProcessing) {
+      return;
+    }
+
+    void applyPrivacyMode(!isPrivacyMode);
+  }, [applyPrivacyMode, isPrivacyMode, isPrivacyProcessing]);
 
   const [isConfirming, setIsConfirming] = useState(false);
   const [generationError, setGenerationError] = useState<string | null>(null);
@@ -421,6 +489,14 @@ export const TargetScreen = ({
     "inline-flex items-center justify-center rounded-xl font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-emerald-500 disabled:cursor-not-allowed disabled:opacity-60";
   const primaryButtonClasses = `${baseButtonClasses} bg-gradient-to-r from-emerald-400 to-emerald-500 text-white shadow-lg shadow-emerald-200/60 hover:from-emerald-500 hover:to-emerald-600 active:from-emerald-600 active:to-emerald-600`;
   const secondaryButtonClasses = `${baseButtonClasses} border border-emerald-200 bg-white text-emerald-600 shadow-sm shadow-emerald-100/60 hover:bg-emerald-50 active:bg-emerald-100`;
+  const privacyButtonBaseClasses = `${baseButtonClasses} border px-5 py-3 text-sm shadow-sm`;
+  const privacyButtonVariantClasses = isPrivacyMode
+    ? "border-emerald-300 bg-emerald-500 text-white hover:bg-emerald-600"
+    : "border-emerald-200 bg-white text-emerald-600 hover:bg-emerald-50";
+  const privacyButtonStateClasses = isPrivacyProcessing
+    ? "cursor-wait opacity-70"
+    : "";
+  const privacyButtonClasses = `${privacyButtonBaseClasses} ${privacyButtonVariantClasses} ${privacyButtonStateClasses}`;
   const controlSectionHeadingId = "target-screen-section-control-heading";
   const generationPanelId = "target-screen-panel-generation";
   const automationPanelId = "target-screen-panel-automation";
@@ -428,6 +504,25 @@ export const TargetScreen = ({
   return (
     <div className="flex min-h-screen w-full justify-center bg-slate-50 px-4 py-10 text-slate-800 sm:px-6">
       <div className="flex w-full max-w-6xl flex-col gap-8">
+        <div className="flex justify-end">
+          <div className="flex flex-col items-end gap-2">
+            <button
+              aria-pressed={isPrivacyMode}
+              aria-busy={isPrivacyProcessing}
+              className={privacyButtonClasses}
+              disabled={isPrivacyProcessing}
+              onClick={togglePrivacyMode}
+              type="button"
+            >
+              {isPrivacyMode ? "사생활 보호 해제" : "사생활 보호"}
+            </button>
+            {privacyError ? (
+              <p className="text-xs font-semibold text-rose-600">
+                {privacyError}
+              </p>
+            ) : null}
+          </div>
+        </div>
         <div className="rounded-2xl border border-emerald-100 bg-gradient-to-br from-emerald-50 via-white to-emerald-50 px-8 py-6 text-center shadow-md">
           <h1 className="text-3xl font-bold text-emerald-700">
             타겟 페이지에 도달했습니다!
