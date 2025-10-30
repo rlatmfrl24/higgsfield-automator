@@ -8,6 +8,11 @@ const DEFAULT_PROMPT_ROWS = 2;
 const STORAGE_KEY = "higgsfield:multiPromptState";
 const STORAGE_VERSION = 1;
 
+const EXTRA_RATIO_OPTIONS: Array<{ value: string; label: string }> = [
+  { value: "2:3", label: "2:3" },
+  { value: "3:2", label: "3:2" },
+];
+
 type MultiPromptStoredEntry = Partial<MultiPromptEntry> | null | undefined;
 type MultiPromptStoredState = {
   version?: number;
@@ -89,7 +94,7 @@ const toSelectOptions = (
     return array.indexOf(value) === index;
   });
 
-  return uniqueValues.map((value) => {
+  const baseOptions = uniqueValues.map((value) => {
     const matched = ratioOptions.find((option) => option.value === value);
 
     return {
@@ -97,6 +102,16 @@ const toSelectOptions = (
       label: matched?.label ?? value,
     };
   });
+
+  EXTRA_RATIO_OPTIONS.forEach((option) => {
+    const exists = baseOptions.some((base) => base.value === option.value);
+
+    if (!exists) {
+      baseOptions.push(option);
+    }
+  });
+
+  return baseOptions;
 };
 
 export const useMultiPromptState = (
