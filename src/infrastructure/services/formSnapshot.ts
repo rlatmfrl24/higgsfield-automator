@@ -32,4 +32,5 @@ export type FormSnapshotPayload = {
   values: Record<string, string | string[]>;
   fields: FormFieldSnapshot[];
   figures: FigureSnapshot[];
+  highlights: string[];
 };

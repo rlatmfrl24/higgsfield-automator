@@ -1,9 +1,29 @@
 /// <reference lib="dom" />
 
-import { TARGET_ORIGIN, TARGET_PATH, FORM_SELECTOR } from "../constants";
+import { TARGET_ORIGIN, TARGET_PATH, FORM_SELECTOR } from "./constants";
 
 const RETRY_ALARM_NAME = "automation:retry";
 const RETRY_DELAY_MS = 3000;
+const SIDE_PANEL_PATH = "index.html";
+
+type SidePanelApi = {
+  open(options: { tabId?: number; windowId?: number }): Promise<void>;
+  setOptions?: (options: {
+    tabId?: number;
+    windowId?: number;
+    path?: string;
+    enabled?: boolean;
+  }) => Promise<void>;
+  setPanelBehavior?: (options: {
+    openPanelOnActionClick: boolean;
+  }) => Promise<void>;
+};
+
+const getSidePanelApi = (): SidePanelApi | null => {
+  const candidate = (chrome as typeof chrome & { sidePanel?: SidePanelApi })
+    .sidePanel;
+  return candidate ?? null;
+};
 
 type QueueEntry = { prompt: string; ratio: string | null };
 
@@ -163,6 +183,83 @@ const errorLog = (...args: unknown[]) => {
 const logEvent = (event: string, detail: Record<string, unknown> = {}) => {
   log(`event=${event}`, detail);
 };
+
+async function configureSidePanelBehavior() {
+  const sidePanel = getSidePanelApi();
+
+  if (!sidePanel?.setPanelBehavior) {
+    return;
+  }
+
+  try {
+    await sidePanel.setPanelBehavior({ openPanelOnActionClick: true });
+  } catch (cause) {
+    warn("Failed to configure side panel behavior", cause);
+  }
+}
+
+async function openExtensionSidePanel(tab?: chrome.tabs.Tab) {
+  const sidePanel = getSidePanelApi();
+
+  if (!sidePanel) {
+    try {
+      await chrome.tabs.create({
+        url: chrome.runtime.getURL(SIDE_PANEL_PATH),
+      });
+    } catch (cause) {
+      errorLog("Failed to open fallback popup tab", cause);
+    }
+    return;
+  }
+
+  const [contextTab] =
+    typeof tab?.id === "number"
+      ? [tab]
+      : await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+
+  const openOptions: { tabId?: number; windowId?: number } = {};
+
+  if (typeof contextTab?.id === "number") {
+    openOptions.tabId = contextTab.id;
+  }
+
+  if (typeof contextTab?.windowId === "number") {
+    openOptions.windowId = contextTab.windowId;
+  }
+
+  if (openOptions.tabId === undefined && openOptions.windowId === undefined) {
+    const currentWindow = await chrome.windows.getCurrent().catch((cause) => {
+      warn("Failed to determine current window for side panel", cause);
+      return null;
+    });
+
+    if (currentWindow?.id !== undefined) {
+      openOptions.windowId = currentWindow.id;
+    }
+  }
+
+  try {
+    if (sidePanel.setOptions && openOptions.tabId !== undefined) {
+      await sidePanel.setOptions({
+        tabId: openOptions.tabId,
+        path: SIDE_PANEL_PATH,
+        enabled: true,
+      });
+    }
+
+    const openArgs: { tabId?: number; windowId?: number } = {};
+
+    if (openOptions.tabId !== undefined) {
+      openArgs.tabId = openOptions.tabId;
+    } else if (openOptions.windowId !== undefined) {
+      openArgs.windowId = openOptions.windowId;
+    }
+
+    await sidePanel.open(openArgs);
+  } catch (cause) {
+    errorLog("Failed to open side panel", cause);
+  }
+}
 
 async function persistState(nextState: AutomationState) {
   await chrome.storage.local.set({ automationState: nextState });
@@ -924,9 +1021,22 @@ chrome.alarms.onAlarm.addListener(async (alarm: { name: string }) => {
   }
 });
 
+chrome.action.onClicked.addListener((tab) => {
+  openExtensionSidePanel(tab).catch((cause) => {
+    errorLog("Action click handling failed", cause);
+  });
+});
+
 chrome.runtime.onInstalled.addListener(() => {
   log("Extension installed or updated");
+  configureSidePanelBehavior().catch((cause) => {
+    warn("Failed to set side panel behavior on install", cause);
+  });
   restoreState();
+});
+
+configureSidePanelBehavior().catch((cause) => {
+  warn("Failed to set side panel behavior on startup", cause);
 });
 
 restoreState().catch((cause) => {

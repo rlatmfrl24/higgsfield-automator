@@ -1,4 +1,4 @@
-import { GENERATION_BUTTON_KEY_PHRASE } from "../../../services/generation";
+import { GENERATION_BUTTON_KEY_PHRASE } from "@infrastructure/services/generation";
 import type { CreditHighlight } from "./formData";
 
 type GenerationPanelProps = {

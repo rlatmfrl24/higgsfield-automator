@@ -1,8 +1,5 @@
 import type { FormSnapshotPayload } from "./formSnapshot";
-import {
-  FORM_SELECTOR,
-  formSnapshotScript,
-} from "./tabScripts/formSnapshotScript";
+import { FORM_SELECTOR, formSnapshotScript } from "./formSnapshotScript";
 import { requireActiveTabId } from "./tabs";
 
 export const captureActiveTabFormSnapshot =

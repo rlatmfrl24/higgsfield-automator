@@ -1,10 +1,13 @@
 /// <reference lib="dom" />
 
-import {
-  FEED_ITEM_SELECTOR,
-  FEED_ROOT_SELECTOR,
-  UPSALE_SELECTOR,
-} from "../constants";
+// 주의: 콘텐츠 스크립트는 MV3에서 클래식 스크립트로 동작하므로
+// 번들 결과에 ESM import 구문이 포함되면 실행이 중단된다.
+// 공유 상수는 빌드 시 분리되어 import가 생성될 수 있어, 이 파일에서는
+// 필요한 값을 직접 정의한다. 수정 시 `src/extension/constants.ts`와
+// 반드시 동일하게 유지해야 한다.
+const FEED_ROOT_SELECTOR = "[data-sentry-component='SoulFeed']";
+const FEED_ITEM_SELECTOR = "[data-sentry-component='SoulFeedItem']";
+const UPSALE_SELECTOR = "[data-sentry-component='ImageUpsellComponent']";
 
 const UPSALE_TEXT_PATTERNS = [
   /Try\s+Higgsfield\s+Premium/i,

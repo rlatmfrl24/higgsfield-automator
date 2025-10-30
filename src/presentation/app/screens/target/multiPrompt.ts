@@ -19,13 +19,8 @@ export const createMultiPromptEntry = (ratio: string): MultiPromptEntry => ({
   id: generateEntryId(),
   prompt: "",
   ratio,
-  count: "1",
+  count: "3",
 });
-
-export const createEmptyMultiPromptEntries = (ratio: string) => [
-  createMultiPromptEntry(ratio),
-  createMultiPromptEntry(ratio),
-];
 
 export const hasNonEmptyString = (value: string | null | undefined) =>
   Boolean(value && value.trim().length > 0);

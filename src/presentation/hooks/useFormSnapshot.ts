@@ -1,13 +1,14 @@
 import { useCallback, useState } from "react";
 
-import type { FormSnapshotPayload } from "../services/formSnapshot";
-import { captureActiveTabFormSnapshot } from "../services/formSnapshotExecutor";
+import type { FormSnapshotPayload } from "@infrastructure/services/formSnapshot";
+import { captureActiveTabFormSnapshot } from "@infrastructure/services/formSnapshotExecutor";
 
 type UseFormSnapshotResult = {
   payload: FormSnapshotPayload | null;
   error: string | null;
   isReading: boolean;
-  readSnapshot: () => Promise<void>;
+  readSnapshot: () => Promise<boolean>;
+  clearError: () => void;
 };
 
 export const useFormSnapshot = (): UseFormSnapshotResult => {
@@ -18,11 +19,11 @@ export const useFormSnapshot = (): UseFormSnapshotResult => {
   const readSnapshot = useCallback(async () => {
     setIsReading(true);
     setError(null);
-    setPayload(null);
 
     try {
       const snapshot = await captureActiveTabFormSnapshot();
       setPayload(snapshot);
+      return true;
     } catch (cause) {
       console.error("폼 데이터를 읽는 중 오류 발생", cause);
 
@@ -32,9 +33,14 @@ export const useFormSnapshot = (): UseFormSnapshotResult => {
           : "알 수 없는 오류가 발생했습니다.";
 
       setError(message);
+      return false;
     } finally {
       setIsReading(false);
     }
+  }, []);
+
+  const clearError = useCallback(() => {
+    setError(null);
   }, []);
 
   return {
@@ -42,6 +48,7 @@ export const useFormSnapshot = (): UseFormSnapshotResult => {
     error,
     isReading,
     readSnapshot,
+    clearError,
   };
 };
 

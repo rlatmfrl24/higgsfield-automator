@@ -1,4 +1,4 @@
-import { TARGET_URL } from "../constants";
+import { TARGET_URL } from "@extension/constants";
 import { checkActiveTabMatchesTarget, getActiveTab } from "./tabs";
 
 type NavigateOptions = {

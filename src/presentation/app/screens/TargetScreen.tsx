@@ -1,16 +1,13 @@
-import {
-  useCallback,
-  useMemo,
-  useState,
-  useEffect,
-  type KeyboardEvent,
-} from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
-import type { FormSnapshotPayload } from "../../services/formSnapshot";
-import { updateActiveTabFieldValue } from "../../services/formControl";
-import { useLiveRegion } from "../../hooks/useLiveRegion";
-import { ControlPanel } from "./target/ControlPanel";
-import { useAutomationState } from "../../hooks/useAutomationState";
+import type { FormSnapshotPayload } from "@infrastructure/services/formSnapshot";
+import { updateActiveTabFieldValue } from "@infrastructure/services/formControl";
+import {
+  getTargetPagePrivacyMode,
+  setTargetPagePrivacyMode,
+} from "@infrastructure/services/privacyMode";
+import { useLiveRegion } from "@presentation/hooks/useLiveRegion";
+import { useAutomationState } from "@presentation/hooks/useAutomationState";
 import {
   deriveFormData,
   extractHighlightFromText,
@@ -20,23 +17,24 @@ import {
   buildSuccessAnnouncement,
   SUCCESS_PREPARATION_MESSAGE,
 } from "./target/messages";
-import {
-  createMultiPromptEntry,
-  hasNonEmptyString,
-  isPositiveIntegerString,
-} from "./target/multiPrompt";
 import { useMultiPromptState } from "./target/useMultiPromptState";
 import {
   validateMultiPromptEntries,
   validatePreparation,
 } from "./target/validation";
-import { DownloadPanel } from "./target/DownloadPanel";
+import { AutomationPanel } from "./target/AutomationPanel";
+import { ControlPanel } from "./target/ControlPanel";
+import {
+  hasNonEmptyString,
+  isPositiveIntegerString,
+} from "./target/multiPrompt";
 
 type TargetScreenProps = {
   isReadingForm: boolean;
   formReadError: string | null;
   formPayload: FormSnapshotPayload | null;
   onReadForm: () => void;
+  onOpenStandaloneMultiPrompt?: () => void;
 };
 
 export const TargetScreen = ({
@@ -44,6 +42,7 @@ export const TargetScreen = ({
   formReadError,
   formPayload,
   onReadForm,
+  onOpenStandaloneMultiPrompt,
 }: TargetScreenProps) => {
   const announce = useLiveRegion();
   const derived = useMemo(() => deriveFormData(formPayload), [formPayload]);
@@ -52,26 +51,71 @@ export const TargetScreen = ({
     setRatioValue,
     entries,
     setEntries,
-    selectOptions,
-    addEntry,
-    removeEntry,
-    updateEntry,
-    canAddMore,
   } = useMultiPromptState(derived?.ratio);
 
+  const [isPrivacyMode, setIsPrivacyMode] = useState(false);
+  const [isPrivacyProcessing, setIsPrivacyProcessing] = useState(false);
+  const [privacyError, setPrivacyError] = useState<string | null>(null);
+
   useEffect(() => {
-    if (!derived) {
+    let cancelled = false;
+
+    const syncPrivacyState = async () => {
+      setIsPrivacyProcessing(true);
+
+      try {
+        const enabled = await getTargetPagePrivacyMode();
+
+        if (!cancelled) {
+          setIsPrivacyMode(enabled);
+          setPrivacyError(null);
+        }
+      } catch (error) {
+        console.error("타겟 페이지 사생활 보호 상태 확인 실패", error);
+
+        if (!cancelled) {
+          setIsPrivacyMode(false);
+        }
+      } finally {
+        if (!cancelled) {
+          setIsPrivacyProcessing(false);
+        }
+      }
+    };
+
+    void syncPrivacyState();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const applyPrivacyMode = useCallback(async (nextMode: boolean) => {
+    setIsPrivacyProcessing(true);
+    setPrivacyError(null);
+
+    try {
+      await setTargetPagePrivacyMode(nextMode);
+      setIsPrivacyMode(nextMode);
+    } catch (error) {
+      console.error("타겟 페이지 사생활 보호 적용 실패", error);
+      const message =
+        error instanceof Error
+          ? error.message
+          : "타겟 페이지에 사생활 보호 효과를 적용하지 못했습니다.";
+      setPrivacyError(message);
+    } finally {
+      setIsPrivacyProcessing(false);
+    }
+  }, []);
+
+  const togglePrivacyMode = useCallback(() => {
+    if (isPrivacyProcessing) {
       return;
     }
 
-    if (entries.length === 0) {
-      const initialCount = Math.max(2, entries.length);
-      const nextEntries = Array.from({ length: initialCount }).map(() =>
-        createMultiPromptEntry(derived.ratio?.value ?? "")
-      );
-      setEntries(nextEntries);
-    }
-  }, [derived, entries.length, setEntries]);
+    void applyPrivacyMode(!isPrivacyMode);
+  }, [applyPrivacyMode, isPrivacyMode, isPrivacyProcessing]);
 
   const [isConfirming, setIsConfirming] = useState(false);
   const [generationError, setGenerationError] = useState<string | null>(null);
@@ -86,10 +130,6 @@ export const TargetScreen = ({
   >(null);
   const [isAutomationActionProcessing, setIsAutomationActionProcessing] =
     useState(false);
-  const [activeTab, setActiveTab] = useState<"control" | "download">("control");
-  const [downloadJobIdInput, setDownloadJobIdInput] = useState("");
-  const [downloadCursor, setDownloadCursor] = useState("");
-
   const {
     state: automationState,
     error: automationError,
@@ -155,20 +195,6 @@ export const TargetScreen = ({
 
     return null;
   }, [derived]);
-
-  const resetMessages = useCallback(() => {
-    setPreparationMessage(null);
-    setGenerationError(null);
-    setIsConfirming(false);
-  }, []);
-
-  const handleSelectTab = useCallback(
-    (tab: "control" | "download") => {
-      setActiveTab(tab);
-      resetMessages();
-    },
-    [resetMessages]
-  );
 
   const failPreparation = useCallback(
     (message: string) => {
@@ -348,43 +374,6 @@ export const TargetScreen = ({
     }
   }, [buildAutomationPayload, failPreparation, startAutomationLoop]);
 
-  const handleAddPrompt = useCallback(() => {
-    resetMessages();
-    addEntry();
-  }, [addEntry, resetMessages]);
-
-  const handleRemovePrompt = useCallback(
-    (id: string) => {
-      resetMessages();
-      removeEntry(id);
-    },
-    [removeEntry, resetMessages]
-  );
-
-  const handleChangePrompt = useCallback(
-    (id: string, value: string) => {
-      resetMessages();
-      updateEntry(id, { prompt: value });
-    },
-    [resetMessages, updateEntry]
-  );
-
-  const handleChangeRatio = useCallback(
-    (id: string, value: string) => {
-      resetMessages();
-      updateEntry(id, { ratio: value });
-    },
-    [resetMessages, updateEntry]
-  );
-
-  const handleChangeCount = useCallback(
-    (id: string, value: string) => {
-      resetMessages();
-      updateEntry(id, { count: value });
-    },
-    [resetMessages, updateEntry]
-  );
-
   const formatTimeLabel = useCallback((timestamp: number | null) => {
     if (!timestamp) {
       return "-";
@@ -500,43 +489,40 @@ export const TargetScreen = ({
     "inline-flex items-center justify-center rounded-xl font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-emerald-500 disabled:cursor-not-allowed disabled:opacity-60";
   const primaryButtonClasses = `${baseButtonClasses} bg-gradient-to-r from-emerald-400 to-emerald-500 text-white shadow-lg shadow-emerald-200/60 hover:from-emerald-500 hover:to-emerald-600 active:from-emerald-600 active:to-emerald-600`;
   const secondaryButtonClasses = `${baseButtonClasses} border border-emerald-200 bg-white text-emerald-600 shadow-sm shadow-emerald-100/60 hover:bg-emerald-50 active:bg-emerald-100`;
-  const tabItemBaseClasses =
-    "relative flex cursor-pointer select-none items-center justify-center rounded-xl px-4 py-2 text-sm font-semibold text-emerald-500 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-emerald-500";
-  const tabItemActiveClasses =
-    "bg-white text-emerald-700 shadow-md shadow-emerald-200/60 after:absolute after:-bottom-3 after:left-1/2 after:h-1 after:w-8 after:-translate-x-1/2 after:rounded-full after:bg-emerald-500";
-  const tabItemInactiveClasses = "hover:text-emerald-600 hover:bg-white/40";
-  const controlTabId = "target-screen-tab-control";
-  const downloadTabId = "target-screen-tab-download";
-  const controlPanelId = "target-screen-panel-control";
-  const downloadPanelId = "target-screen-panel-download";
-  const tabs = [
-    {
-      value: "control" as const,
-      label: "폼 제어 패널",
-      tabId: controlTabId,
-      panelId: controlPanelId,
-    },
-    {
-      value: "download" as const,
-      label: "자동 다운로드 패널",
-      tabId: downloadTabId,
-      panelId: downloadPanelId,
-    },
-  ];
-
-  const handleTabKeyDown = useCallback(
-    (tab: "control" | "download", event: KeyboardEvent<HTMLDivElement>) => {
-      if (event.key === "Enter" || event.key === " ") {
-        event.preventDefault();
-        handleSelectTab(tab);
-      }
-    },
-    [handleSelectTab]
-  );
+  const privacyButtonBaseClasses = `${baseButtonClasses} border px-5 py-3 text-sm shadow-sm`;
+  const privacyButtonVariantClasses = isPrivacyMode
+    ? "border-emerald-300 bg-emerald-500 text-white hover:bg-emerald-600"
+    : "border-emerald-200 bg-white text-emerald-600 hover:bg-emerald-50";
+  const privacyButtonStateClasses = isPrivacyProcessing
+    ? "cursor-wait opacity-70"
+    : "";
+  const privacyButtonClasses = `${privacyButtonBaseClasses} ${privacyButtonVariantClasses} ${privacyButtonStateClasses}`;
+  const controlSectionHeadingId = "target-screen-section-control-heading";
+  const generationPanelId = "target-screen-panel-generation";
+  const automationPanelId = "target-screen-panel-automation";
 
   return (
     <div className="flex min-h-screen w-full justify-center bg-slate-50 px-4 py-10 text-slate-800 sm:px-6">
       <div className="flex w-full max-w-6xl flex-col gap-8">
+        <div className="flex justify-end">
+          <div className="flex flex-col items-end gap-2">
+            <button
+              aria-pressed={isPrivacyMode}
+              aria-busy={isPrivacyProcessing}
+              className={privacyButtonClasses}
+              disabled={isPrivacyProcessing}
+              onClick={togglePrivacyMode}
+              type="button"
+            >
+              {isPrivacyMode ? "사생활 보호 해제" : "사생활 보호"}
+            </button>
+            {privacyError ? (
+              <p className="text-xs font-semibold text-rose-600">
+                {privacyError}
+              </p>
+            ) : null}
+          </div>
+        </div>
         <div className="rounded-2xl border border-emerald-100 bg-gradient-to-br from-emerald-50 via-white to-emerald-50 px-8 py-6 text-center shadow-md">
           <h1 className="text-3xl font-bold text-emerald-700">
             타겟 페이지에 도달했습니다!
@@ -566,94 +552,77 @@ export const TargetScreen = ({
               ? "자동화 상태 동기화 중..."
               : "자동화 상태 새로고침"}
           </button>
+          {onOpenStandaloneMultiPrompt ? (
+            <button
+              className={`${secondaryButtonClasses} px-5 py-3 text-sm`}
+              onClick={onOpenStandaloneMultiPrompt}
+              type="button"
+            >
+              멀티 프롬프트 독립 화면
+            </button>
+          ) : null}
         </div>
 
         {formReadError ? (
           <p className="text-sm font-semibold text-rose-600">{formReadError}</p>
         ) : null}
 
-        {derived ? (
-          <div className="w-full">
-            <div className="w-full overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-lg shadow-slate-200/60">
-              <div className="border-b border-slate-200 bg-gradient-to-r from-emerald-50 via-white to-emerald-50 px-6 pt-5">
-                <div
-                  role="tablist"
-                  aria-label="타겟 화면 내비게이션"
-                  className="relative flex gap-3 rounded-t-2xl bg-emerald-100/40 p-2"
-                >
-                  {tabs.map(({ value, label, tabId, panelId }) => {
-                    const isActive = activeTab === value;
-                    return (
-                      <div
-                        key={value}
-                        id={tabId}
-                        role="tab"
-                        tabIndex={isActive ? 0 : -1}
-                        aria-selected={isActive}
-                        aria-controls={panelId}
-                        className={`${tabItemBaseClasses} ${
-                          isActive
-                            ? tabItemActiveClasses
-                            : tabItemInactiveClasses
-                        }`}
-                        onClick={() => handleSelectTab(value)}
-                        onKeyDown={(event) => handleTabKeyDown(value, event)}
-                      >
-                        {label}
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {activeTab === "control" ? (
-                <ControlPanel
-                  panelId={controlPanelId}
-                  labelledById={controlTabId}
-                  figures={derived.figures}
-                  datasetValues={derived.datasetValues}
-                  isAutomationRunning={isAutomationRunning}
-                  entries={entries}
-                  selectOptions={selectOptions}
-                  onAddPrompt={handleAddPrompt}
-                  onRemovePrompt={handleRemovePrompt}
-                  onChangePrompt={handleChangePrompt}
-                  onChangeRatio={handleChangeRatio}
-                  onChangeCount={handleChangeCount}
-                  canAddMore={canAddMore}
-                  automationQueueLength={automationQueue.length}
-                  automationActiveCount={automationState.activeCount}
-                  automationRemainingCount={automationRemainingCount}
-                  automationLastError={automationState.lastError ?? null}
-                  automationStatusMeta={automationStatusMeta}
-                  automationActionMessage={automationActionMessage}
-                  automationActionError={automationActionError}
-                  automationError={automationError}
-                  isAutomationActionProcessing={isAutomationActionProcessing}
-                  onResumeAutomation={handleResumeAutomation}
-                  onPauseAutomation={handlePauseAutomation}
-                  onStopAutomation={handleStopAutomation}
-                  highlightInfo={highlightInfo}
-                  onPrepareGeneration={handleRequestGeneration}
-                  preparationMessage={preparationMessage}
-                  isConfirming={isConfirming}
-                  onConfirmGeneration={handleConfirmGeneration}
-                  onCancelGeneration={handleCancelGeneration}
-                  generationError={generationError}
-                />
-              ) : (
-                <DownloadPanel
-                  panelId={downloadPanelId}
-                  labelledById={downloadTabId}
-                  jobIdInput={downloadJobIdInput}
-                  onJobIdInputChange={setDownloadJobIdInput}
-                  downloadCursor={downloadCursor}
-                  onDownloadCursorChange={setDownloadCursor}
-                />
-              )}
+        <div className="w-full">
+          <div className="w-full overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-lg shadow-slate-200/60">
+            <div className="border-b border-slate-200 bg-gradient-to-r from-emerald-50 via-white to-emerald-50 px-6 py-5">
+              <h2
+                id={controlSectionHeadingId}
+                className="text-lg font-semibold text-emerald-700"
+              >
+                폼 제어 패널
+              </h2>
+              <p className="mt-1 text-sm text-emerald-600">
+                자동 생성 요청과 멀티 프롬프트 요약 정보를 확인하세요.
+              </p>
+              {!derived ? (
+                <p className="mt-2 text-xs text-emerald-600">
+                  아직 폼 데이터를 읽지 않았습니다. 필요한 경우 언제든지
+                  "폼 데이터 화면 출력" 버튼으로 동기화할 수 있습니다.
+                </p>
+              ) : null}
             </div>
+
+            <ControlPanel
+              panelId={generationPanelId}
+              labelledById={controlSectionHeadingId}
+              highlightInfo={highlightInfo}
+              onPrepareGeneration={handleRequestGeneration}
+              preparationMessage={preparationMessage}
+              isConfirming={isConfirming}
+              onConfirmGeneration={handleConfirmGeneration}
+              onCancelGeneration={handleCancelGeneration}
+              generationError={generationError}
+            />
+
+            <AutomationPanel
+              panelId={automationPanelId}
+              labelledById={controlSectionHeadingId}
+              figures={derived?.figures ?? []}
+              datasetValues={derived?.datasetValues ?? {}}
+              isAutomationRunning={isAutomationRunning}
+              entries={entries}
+              automationQueueLength={automationQueue.length}
+              automationActiveCount={automationState.activeCount}
+              automationRemainingCount={automationRemainingCount}
+              automationLastError={automationState.lastError ?? null}
+              automationStatusMeta={automationStatusMeta}
+              automationActionMessage={automationActionMessage}
+              automationActionError={automationActionError}
+              automationError={automationError}
+              isAutomationActionProcessing={isAutomationActionProcessing}
+              onResumeAutomation={handleResumeAutomation}
+              onPauseAutomation={handlePauseAutomation}
+              onStopAutomation={handleStopAutomation}
+              isFormDataReady={Boolean(derived)}
+              onOpenStandalone={onOpenStandaloneMultiPrompt}
+            />
           </div>
-        ) : null}
+        </div>
       </div>
     </div>
   );

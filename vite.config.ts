@@ -6,6 +6,15 @@ import tailwindcss from "@tailwindcss/vite";
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [react(), tailwindcss()],
+  resolve: {
+    alias: {
+      "@presentation": resolve(__dirname, "src/presentation"),
+      "@application": resolve(__dirname, "src/application"),
+      "@domain": resolve(__dirname, "src/domain"),
+      "@infrastructure": resolve(__dirname, "src/infrastructure"),
+      "@extension": resolve(__dirname, "src/extension"),
+    },
+  },
   build: {
     rollupOptions: {
       input: {
@@ -26,6 +35,15 @@ export default defineConfig({
           }
 
           return "assets/[name]-[hash].js";
+        },
+        manualChunks(id) {
+          if (id.includes("src/extension/")) {
+            return;
+          }
+
+          if (id.includes("node_modules")) {
+            return "vendor";
+          }
         },
       },
     },

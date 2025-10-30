@@ -2,9 +2,9 @@ import type {
   FigureSnapshot,
   FormFieldSnapshot,
   FormSnapshotPayload,
-} from "../formSnapshot";
+} from "./formSnapshot";
 
-import { FORM_SELECTOR } from "../../constants";
+import { FORM_SELECTOR } from "@extension/constants";
 
 type ScriptResult =
   | {
@@ -318,12 +318,21 @@ export const formSnapshotScript = (formSelector?: string): ScriptResult => {
     collectFigureSnapshot(figure)
   );
 
+  const highlightTexts = Array.from(form.querySelectorAll("span"))
+    .map((element) => element.textContent?.trim() ?? "")
+    .filter((text) =>
+      Boolean(text) && /daily\s+free\s+credits\s+left/i.test(text)
+    );
+
+  const highlights = Array.from(new Set(highlightTexts));
+
   return {
     success: true,
     payload: {
       values,
       fields,
       figures,
+      highlights,
     },
   };
 };

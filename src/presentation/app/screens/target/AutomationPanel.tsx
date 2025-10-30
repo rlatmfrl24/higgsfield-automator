@@ -1,10 +1,7 @@
 import { HighlightBadges } from "./HighlightBadges";
-import { MultiPromptTable } from "./MultiPromptTable";
-import { GenerationPanel } from "./GenerationPanel";
 
 import type { MultiPromptEntry } from "./multiPrompt";
-
-type SelectOption = { value: string; label: string };
+import { hasNonEmptyString, isPositiveIntegerString } from "./multiPrompt";
 
 type AutomationStatusMeta = {
   label: string;
@@ -21,20 +18,13 @@ type AutomationStatusMeta = {
   maxCount?: number | null;
 };
 
-type ControlPanelProps = {
+type AutomationPanelProps = {
   panelId: string;
   labelledById: string;
   figures: string[];
   datasetValues: Record<string, string>;
   isAutomationRunning: boolean;
   entries: MultiPromptEntry[];
-  selectOptions: SelectOption[];
-  onAddPrompt: () => void;
-  onRemovePrompt: (id: string) => void;
-  onChangePrompt: (id: string, value: string) => void;
-  onChangeRatio: (id: string, value: string) => void;
-  onChangeCount: (id: string, value: string) => void;
-  canAddMore: boolean;
   automationQueueLength: number;
   automationActiveCount: number;
   automationRemainingCount: number;
@@ -47,29 +37,17 @@ type ControlPanelProps = {
   onResumeAutomation: () => Promise<void>;
   onPauseAutomation: () => Promise<void>;
   onStopAutomation: () => Promise<void>;
-  highlightInfo: Parameters<typeof GenerationPanel>[0]["highlightInfo"];
-  onPrepareGeneration: () => Promise<void>;
-  preparationMessage: string | null;
-  isConfirming: boolean;
-  onConfirmGeneration: () => Promise<void>;
-  onCancelGeneration: () => void;
-  generationError: string | null;
+  isFormDataReady?: boolean;
+  onOpenStandalone?: () => void;
 };
 
-export const ControlPanel = ({
+export const AutomationPanel = ({
   panelId,
   labelledById,
   figures,
   datasetValues,
   isAutomationRunning,
   entries,
-  selectOptions,
-  onAddPrompt,
-  onRemovePrompt,
-  onChangePrompt,
-  onChangeRatio,
-  onChangeCount,
-  canAddMore,
   automationQueueLength,
   automationActiveCount,
   automationRemainingCount,
@@ -82,18 +60,26 @@ export const ControlPanel = ({
   onResumeAutomation,
   onPauseAutomation,
   onStopAutomation,
-  highlightInfo,
-  onPrepareGeneration,
-  preparationMessage,
-  isConfirming,
-  onConfirmGeneration,
-  onCancelGeneration,
-  generationError,
-}: ControlPanelProps) => {
+  isFormDataReady = true,
+  onOpenStandalone,
+}: AutomationPanelProps) => {
   const baseButtonClasses =
     "inline-flex items-center justify-center rounded-xl font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-emerald-500 disabled:cursor-not-allowed disabled:opacity-60";
   const automationActionButtonClasses = `${baseButtonClasses} border border-emerald-200 bg-white text-emerald-600 hover:border-emerald-300 hover:bg-emerald-50 active:bg-emerald-100 disabled:text-emerald-300 shadow-sm shadow-emerald-100/60`;
   const automationStopButtonClasses = `${baseButtonClasses} border border-rose-200 bg-white text-rose-500 hover:border-rose-300 hover:bg-rose-50 active:bg-rose-100 disabled:text-rose-300`;
+
+  const filledEntries = entries.filter((entry) =>
+    hasNonEmptyString(entry.prompt)
+  );
+  const totalRequestedCount = filledEntries.reduce((total, entry) => {
+    if (!isPositiveIntegerString(entry.count)) {
+      return total;
+    }
+
+    return total + Number.parseInt(entry.count, 10);
+  }, 0);
+  const previewEntries = filledEntries.slice(0, 3);
+  const remainingPreviewCount = filledEntries.length - previewEntries.length;
 
   return (
     <div
@@ -105,25 +91,93 @@ export const ControlPanel = ({
     >
       <div className="grid gap-6 xl:grid-cols-[2fr_1fr] xl:items-start">
         <section className="space-y-6">
+          {!isFormDataReady ? (
+            <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-700">
+              폼 데이터를 아직 읽지 않았습니다. 멀티 프롬프트는 미리 입력하고,
+              필요할 때 "폼 데이터 화면 출력" 버튼으로 대상 정보를
+              동기화하세요.
+            </div>
+          ) : null}
+
           <HighlightBadges figures={figures} datasetValues={datasetValues} />
 
-          {isAutomationRunning ? (
-            <div className="rounded-xl border border-emerald-100 bg-emerald-50 px-5 py-6 text-center text-sm text-emerald-700">
-              자동 생성 루프가 실행 중입니다. 자동화가 종료되면 멀티 프롬프트
-              입력 폼이 다시 표시됩니다.
+          <section className="space-y-4 rounded-2xl border border-slate-200 bg-white px-5 py-5 shadow-md shadow-slate-200/60">
+            <div className="flex items-start justify-between gap-3">
+              <div className="space-y-1">
+                <p className="text-sm font-semibold text-slate-900">
+                  멀티 프롬프트 요약
+                </p>
+                <p className="text-xs text-slate-500">
+                  독립형 설정 화면에서 상세 편집이 가능합니다.
+                </p>
+              </div>
+              <button
+                className="inline-flex items-center justify-center rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-600 shadow-sm transition hover:border-emerald-300 hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-60"
+                onClick={onOpenStandalone}
+                type="button"
+                disabled={!onOpenStandalone}
+              >
+                설정 열기
+              </button>
             </div>
-          ) : (
-            <MultiPromptTable
-              entries={entries}
-              selectOptions={selectOptions}
-              onChangePrompt={onChangePrompt}
-              onChangeRatio={onChangeRatio}
-              onChangeCount={onChangeCount}
-              onRemove={onRemovePrompt}
-              onAdd={onAddPrompt}
-              disabledAdd={!canAddMore}
-            />
-          )}
+
+            {filledEntries.length ? (
+              <div className="space-y-3 text-sm text-slate-700">
+                <div className="grid gap-2 text-xs text-slate-600 sm:grid-cols-2">
+                  <div className="flex justify-between">
+                    <span className="font-medium text-slate-700">
+                      등록된 프롬프트
+                    </span>
+                    <span>{filledEntries.length}개</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="font-medium text-slate-700">
+                      예약된 생성 횟수
+                    </span>
+                    <span>{totalRequestedCount}회</span>
+                  </div>
+                </div>
+
+                <ul className="space-y-2 text-xs text-slate-600">
+                  {previewEntries.map((entry, index) => (
+                    <li
+                      key={entry.id}
+                      className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2"
+                    >
+                      <p className="line-clamp-2 font-medium text-slate-700">
+                        {entry.prompt.trim() || `프롬프트 ${index + 1}`}
+                      </p>
+                      <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-slate-500">
+                        <span className="rounded-full bg-white px-2 py-0.5 font-semibold text-emerald-600">
+                          비율 {entry.ratio || "-"}
+                        </span>
+                        <span className="rounded-full bg-white px-2 py-0.5 font-semibold text-slate-600">
+                          {entry.count || "-"}회 생성
+                        </span>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+
+                {remainingPreviewCount > 0 ? (
+                  <p className="text-xs text-slate-500">
+                    + {remainingPreviewCount}개의 프롬프트가 더 등록되어 있습니다.
+                  </p>
+                ) : null}
+
+                {isAutomationRunning ? (
+                  <p className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-700">
+                    자동 생성 루프가 실행 중입니다. 수정은 루프 종료 후 가능하며,
+                    설정 화면에서는 언제든지 내용을 검토할 수 있습니다.
+                  </p>
+                ) : null}
+              </div>
+            ) : (
+              <p className="text-xs text-slate-500">
+                등록된 멀티 프롬프트가 없습니다. 설정 화면에서 프롬프트를 추가해 주세요.
+              </p>
+            )}
+          </section>
         </section>
 
         <aside className="space-y-6">
@@ -264,24 +318,11 @@ export const ControlPanel = ({
               </p>
             ) : null}
           </section>
-
-          <GenerationPanel
-            onPrepare={() => {
-              void onPrepareGeneration();
-            }}
-            highlightInfo={highlightInfo}
-            preparationMessage={preparationMessage}
-            isConfirming={isConfirming}
-            onConfirm={() => {
-              void onConfirmGeneration();
-            }}
-            onCancel={onCancelGeneration}
-            errorMessage={generationError}
-          />
         </aside>
       </div>
     </div>
   );
 };
 
-export default ControlPanel;
+export default AutomationPanel;
+
