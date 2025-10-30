@@ -4,7 +4,6 @@ import type { FieldSelection } from "./formData";
 import { createMultiPromptEntry } from "./multiPrompt";
 import type { MultiPromptEntry } from "./multiPrompt";
 
-const MAX_PROMPT_ROW = 10;
 const DEFAULT_PROMPT_ROWS = 2;
 const STORAGE_KEY = "higgsfield:multiPromptState";
 const STORAGE_VERSION = 1;
@@ -144,9 +143,9 @@ export const useMultiPromptState = (
             ? stored.entries
             : [];
 
-          let nextEntries = storedEntries
-            .map((entry) => normaliseStoredEntry(entry, storedRatio || ""))
-            .slice(0, MAX_PROMPT_ROW);
+          let nextEntries = storedEntries.map((entry) =>
+            normaliseStoredEntry(entry, storedRatio || "")
+          );
 
           if (!nextEntries.length) {
             nextEntries = Array.from({ length: DEFAULT_PROMPT_ROWS }, () =>
@@ -251,10 +250,6 @@ export const useMultiPromptState = (
 
   const addEntry = useCallback(() => {
     setEntries((prev) => {
-      if (prev.length >= MAX_PROMPT_ROW) {
-        return prev;
-      }
-
       return [...prev, createMultiPromptEntry(ratioValue)];
     });
   }, [ratioValue]);
@@ -287,7 +282,7 @@ export const useMultiPromptState = (
           createMultiPromptEntry(ratioValue)
         );
 
-        return [...prev, ...newEntries].slice(0, MAX_PROMPT_ROW);
+        return [...prev, ...newEntries];
       });
     },
     [ratioValue]
@@ -304,6 +299,6 @@ export const useMultiPromptState = (
     removeEntry,
     updateEntry,
     addInitialRows,
-    canAddMore: entries.length < MAX_PROMPT_ROW,
+    canAddMore: true,
   };
 };

@@ -41,7 +41,7 @@ export const MultiPromptTable = ({
     </div>
 
     <div className="rounded-lg border border-slate-200 bg-white shadow-sm">
-      <div className="grid grid-cols-[minmax(0,1fr)_92px_92px_36px] items-center gap-3 border-b border-slate-200 bg-slate-100 px-4 py-2 text-xs font-semibold text-slate-600">
+      <div className="hidden grid-cols-[minmax(0,1fr)_112px_120px_44px] items-center gap-3 border-b border-slate-200 bg-slate-100 px-4 py-2 text-xs font-semibold text-slate-600 sm:grid md:grid-cols-[minmax(0,1fr)_140px_140px_52px]">
         <span>프롬프트</span>
         <span className="text-center">비율</span>
         <span className="text-center">생성 횟수</span>
@@ -52,36 +52,57 @@ export const MultiPromptTable = ({
         {entries.map((entry, index) => (
           <div
             key={entry.id}
-            className="grid grid-cols-[minmax(0,1fr)_92px_92px_36px] items-start gap-3 px-4 py-3"
+            className="relative grid grid-cols-1 gap-4 px-4 py-5 sm:grid-cols-[minmax(0,1fr)_112px_120px_44px] sm:items-start sm:gap-4 md:grid-cols-[minmax(0,1fr)_140px_140px_52px]"
           >
-            <textarea
-              className="min-h-[140px] rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 shadow-inner focus:outline-none focus:ring-2 focus:ring-emerald-500"
-              placeholder={`프롬프트 ${index + 1}`}
-              value={entry.prompt}
-              onChange={(event) => onChangePrompt(entry.id, event.target.value)}
-            />
-            <select
-              className="rounded-md border border-slate-200 bg-white px-2 py-1 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-              value={entry.ratio}
-              onChange={(event) => onChangeRatio(entry.id, event.target.value)}
-            >
-              {selectOptions.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-            <input
-              className="rounded-md border border-slate-200 bg-white px-2 py-1 text-center text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-              type="number"
-              min={1}
-              max={99}
-              value={entry.count}
-              onChange={(event) => onChangeCount(entry.id, event.target.value)}
-            />
+            <div className="flex flex-col gap-1">
+              <span className="text-xs font-semibold text-slate-500 sm:hidden">
+                프롬프트
+              </span>
+              <textarea
+                className="w-full min-h-[120px] min-w-0 resize-y rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 shadow-inner focus:outline-none focus:ring-2 focus:ring-emerald-500 md:min-h-[140px]"
+                placeholder={`프롬프트 ${index + 1}`}
+                value={entry.prompt}
+                onChange={(event) =>
+                  onChangePrompt(entry.id, event.target.value)
+                }
+              />
+            </div>
+            <div className="flex flex-col gap-1 sm:flex-none">
+              <span className="text-xs font-semibold text-slate-500 sm:hidden">
+                비율
+              </span>
+              <select
+                className="w-full rounded-md border border-slate-200 bg-white px-2 py-1 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500 md:text-sm"
+                value={entry.ratio}
+                onChange={(event) =>
+                  onChangeRatio(entry.id, event.target.value)
+                }
+              >
+                {selectOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="flex flex-col gap-1 sm:flex-none">
+              <span className="text-xs font-semibold text-slate-500 sm:hidden">
+                생성 횟수
+              </span>
+              <input
+                className="w-full rounded-md border border-slate-200 bg-white px-2 py-1 text-center text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500 md:text-sm"
+                type="number"
+                min={1}
+                max={99}
+                value={entry.count}
+                onChange={(event) =>
+                  onChangeCount(entry.id, event.target.value)
+                }
+              />
+            </div>
             <button
               type="button"
-              className="flex h-8 w-8 items-center justify-center rounded-full border border-transparent text-slate-400 transition hover:border-red-200 hover:bg-red-50 hover:text-red-500 disabled:opacity-40"
+              className="absolute right-4 top-4 flex h-8 w-8 items-center justify-center rounded-full border border-transparent text-slate-400 transition hover:border-red-200 hover:bg-red-50 hover:text-red-500 disabled:opacity-40 sm:static sm:col-start-4 sm:row-start-1 sm:row-span-2 sm:self-start sm:justify-self-center"
               onClick={() => onRemove(entry.id)}
               disabled={entries.length <= 1}
               aria-label={`프롬프트 ${index + 1} 삭제`}
@@ -94,7 +115,7 @@ export const MultiPromptTable = ({
 
       <div className="flex items-center justify-between border-t border-slate-200 bg-slate-50 px-4 py-2.5">
         <p className="text-xs text-slate-500">
-          최소 1개, 최대 6개의 프롬프트를 설정할 수 있습니다.
+          필요한 만큼 프롬프트를 자유롭게 추가할 수 있습니다.
         </p>
       </div>
     </div>
