@@ -5,6 +5,347 @@ import {
 } from "./selectors";
 import { requireActiveTabId } from "./tabs";
 
+const JOB_ID_REGEX =
+  /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
+const JOB_PATH_REGEX = /\/job\/([^/?#]+)/i;
+const JOB_HASH_REGEX = /(?:#|jobId=)([a-f0-9-]{10,})/i;
+const HOVER_EVENT_TYPES = [
+  "pointerenter",
+  "pointerover",
+  "mouseenter",
+  "mouseover",
+  "focus",
+] as const;
+
+const safeDecodeURIComponent = (value: string): string | null => {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return null;
+  }
+};
+
+const isHTMLElement = (element: Element | null): element is HTMLElement => {
+  return (
+    typeof globalThis.HTMLElement === "function" &&
+    element instanceof globalThis.HTMLElement
+  );
+};
+
+const isHTMLAnchorElement = (
+  element: Element | null
+): element is HTMLAnchorElement => {
+  return (
+    typeof globalThis.HTMLAnchorElement === "function" &&
+    element instanceof globalThis.HTMLAnchorElement
+  );
+};
+
+const isHTMLImageElement = (
+  element: Element | null
+): element is HTMLImageElement => {
+  return (
+    typeof globalThis.HTMLImageElement === "function" &&
+    element instanceof globalThis.HTMLImageElement
+  );
+};
+
+const dispatchHoverEvents = (target: Element | null) => {
+  if (!target) {
+    return;
+  }
+
+  const PointerEventCtor =
+    typeof globalThis.PointerEvent === "function"
+      ? (globalThis.PointerEvent as typeof PointerEvent)
+      : undefined;
+  const MouseEventCtor =
+    typeof globalThis.MouseEvent === "function"
+      ? (globalThis.MouseEvent as typeof MouseEvent)
+      : undefined;
+
+  for (const type of HOVER_EVENT_TYPES) {
+    try {
+      if (PointerEventCtor) {
+        target.dispatchEvent(
+          new PointerEventCtor(type, {
+            bubbles: true,
+            cancelable: true,
+          } as PointerEventInit)
+        );
+      } else if (MouseEventCtor) {
+        target.dispatchEvent(
+          new MouseEventCtor(type, {
+            bubbles: true,
+            cancelable: true,
+          } as MouseEventInit)
+        );
+      } else {
+        target.dispatchEvent(
+          new Event(type, { bubbles: true, cancelable: true })
+        );
+      }
+    } catch {
+      target.dispatchEvent(
+        new Event(type, { bubbles: true, cancelable: true })
+      );
+    }
+  }
+};
+
+const delay = (ms: number) =>
+  new Promise<void>((resolve) => {
+    const timer =
+      typeof globalThis.setTimeout === "function"
+        ? globalThis.setTimeout.bind(globalThis)
+        : setTimeout;
+    timer(resolve, ms);
+  });
+
+const waitForAnimationFrame = () =>
+  new Promise<void>((resolve) => {
+    if (typeof globalThis.requestAnimationFrame === "function") {
+      globalThis.requestAnimationFrame(() => resolve());
+    } else {
+      const timer =
+        typeof globalThis.setTimeout === "function"
+          ? globalThis.setTimeout.bind(globalThis)
+          : setTimeout;
+      timer(() => resolve(), 16);
+    }
+  });
+
+const extractJobIdFromUrl = (
+  value: string | null | undefined
+): string | null => {
+  if (!value) {
+    return null;
+  }
+
+  const trimmed = value.trim();
+
+  if (!trimmed) {
+    return null;
+  }
+
+  const pathMatch = JOB_PATH_REGEX.exec(trimmed);
+  if (pathMatch?.[1]) {
+    return pathMatch[1];
+  }
+
+  const hashMatch = JOB_HASH_REGEX.exec(trimmed);
+  if (hashMatch?.[1]) {
+    return hashMatch[1];
+  }
+
+  const jobMatch = JOB_ID_REGEX.exec(trimmed);
+  if (jobMatch?.[0]) {
+    return jobMatch[0];
+  }
+
+  const urlParamMatch = /[?&]url=([^&#]+)/i.exec(trimmed);
+  if (urlParamMatch?.[1]) {
+    const decoded = safeDecodeURIComponent(urlParamMatch[1]);
+
+    if (decoded && decoded.trim() && decoded.trim() !== trimmed) {
+      const nestedJobId = extractJobIdFromUrl(decoded.trim());
+      if (nestedJobId) {
+        return nestedJobId;
+      }
+    }
+  }
+
+  return null;
+};
+
+const extractJobIdFromElementAttributes = (
+  element: Element | null
+): string | null => {
+  if (!element) {
+    return null;
+  }
+
+  const attributeCandidates = [
+    element.getAttribute("data-job-id"),
+    element.getAttribute("data-sentry-job-id"),
+    element.getAttribute("data-jobid"),
+  ];
+
+  for (const candidate of attributeCandidates) {
+    const trimmed = candidate?.trim();
+
+    if (!trimmed) {
+      continue;
+    }
+
+    if (JOB_ID_REGEX.test(trimmed)) {
+      return trimmed;
+    }
+
+    const fromUrl = extractJobIdFromUrl(trimmed);
+    if (fromUrl) {
+      return fromUrl;
+    }
+  }
+
+  if (isHTMLElement(element)) {
+    const datasetValues = Object.values(element.dataset ?? {});
+    for (const value of datasetValues) {
+      const trimmed = value?.trim();
+
+      if (!trimmed) {
+        continue;
+      }
+
+      const directMatch = JOB_ID_REGEX.exec(trimmed);
+      if (directMatch?.[0]) {
+        return directMatch[0];
+      }
+
+      const fromUrl = extractJobIdFromUrl(trimmed);
+      if (fromUrl) {
+        return fromUrl;
+      }
+    }
+  }
+
+  const hrefCandidates: Array<string | null> = [
+    element.getAttribute("href"),
+    element.getAttribute("data-href"),
+  ];
+
+  if (isHTMLAnchorElement(element)) {
+    hrefCandidates.push(element.href);
+  }
+
+  for (const candidate of hrefCandidates) {
+    const jobId = extractJobIdFromUrl(candidate ?? undefined);
+    if (jobId) {
+      return jobId;
+    }
+  }
+
+  return null;
+};
+
+const resolveJobIdFromItem = (
+  item: Element,
+  overlaySelector: string
+): string | null => {
+  const direct = extractJobIdFromElementAttributes(item);
+  if (direct) {
+    return direct;
+  }
+
+  const overlayElement = item.querySelector(overlaySelector);
+  const overlayJobId = extractJobIdFromElementAttributes(overlayElement);
+  if (overlayJobId) {
+    return overlayJobId;
+  }
+
+  if (overlayElement) {
+    const nestedWithData = overlayElement.querySelector(
+      "[data-job-id], [data-sentry-job-id]"
+    );
+    const nestedJobId = extractJobIdFromElementAttributes(nestedWithData);
+    if (nestedJobId) {
+      return nestedJobId;
+    }
+
+    const interactiveDescendants = overlayElement.querySelectorAll(
+      "a[href], button[href], button[data-href]"
+    );
+
+    for (const candidate of interactiveDescendants) {
+      const extracted = extractJobIdFromElementAttributes(candidate);
+      if (extracted) {
+        return extracted;
+      }
+    }
+  }
+
+  const image = item.querySelector(
+    "img[data-sentry-element='Image'], img[data-sentry-component='Media'], img"
+  );
+
+  if (isHTMLImageElement(image)) {
+    const candidateSources = [
+      image.getAttribute("src"),
+      image.getAttribute("data-src"),
+      image.getAttribute("srcset"),
+      image.getAttribute("data-srcset"),
+    ];
+
+    for (const source of candidateSources) {
+      const jobId = extractJobIdFromUrl(source ?? undefined);
+      if (jobId) {
+        return jobId;
+      }
+    }
+  }
+
+  const sourceElement = item.querySelector("source[srcset]");
+
+  if (isHTMLElement(sourceElement)) {
+    const sourceJobId = extractJobIdFromUrl(
+      sourceElement.getAttribute("srcset") ?? undefined
+    );
+    if (sourceJobId) {
+      return sourceJobId;
+    }
+  }
+
+  const overlayText = overlayElement?.textContent ?? "";
+  const overlayTextMatch = JOB_ID_REGEX.exec(overlayText);
+  if (overlayTextMatch?.[0]) {
+    return overlayTextMatch[0];
+  }
+
+  const itemTextMatch = JOB_ID_REGEX.exec(item.textContent ?? "");
+  if (itemTextMatch?.[0]) {
+    return itemTextMatch[0];
+  }
+
+  return null;
+};
+
+const extractJobIdFromFeedItem = async (
+  item: Element | null,
+  overlaySelector: string
+): Promise<string | null> => {
+  if (!item) {
+    return null;
+  }
+
+  const attempt = () => resolveJobIdFromItem(item, overlaySelector);
+
+  const immediate = attempt();
+  if (immediate) {
+    return immediate;
+  }
+
+  dispatchHoverEvents(item);
+  const overlayElement = item.querySelector(overlaySelector);
+  if (overlayElement) {
+    dispatchHoverEvents(overlayElement);
+  }
+
+  await waitForAnimationFrame();
+
+  const postFrame = attempt();
+  if (postFrame) {
+    return postFrame;
+  }
+
+  await delay(120);
+
+  if (overlayElement) {
+    dispatchHoverEvents(overlayElement);
+  }
+
+  return attempt();
+};
+
 type InjectionResult =
   | { success: true; jobId: string }
   | { success: false; error: string };
@@ -13,11 +354,11 @@ type QueueInjectionResult =
   | { success: true; jobIds: string[] }
   | { success: false; error: string };
 
-const extractFirstFeedJobId = (
+const extractFirstFeedJobId = async (
   rootSelector: string,
   itemSelector: string,
   overlaySelector: string
-): InjectionResult => {
+): Promise<InjectionResult> => {
   const feedRoot = document.querySelector(rootSelector);
 
   if (!feedRoot) {
@@ -36,19 +377,9 @@ const extractFirstFeedJobId = (
     };
   }
 
-  const overlayLink = firstItem.querySelector(overlaySelector);
+  const jobId = await extractJobIdFromFeedItem(firstItem, overlaySelector);
 
-  if (!(overlayLink instanceof HTMLAnchorElement)) {
-    return {
-      success: false,
-      error: "첫 번째 항목에서 Job 링크를 찾지 못했습니다.",
-    };
-  }
-
-  const href = overlayLink.getAttribute("href") ?? "";
-  const match = /\/job\/([^/?#]+)/i.exec(href);
-
-  if (!match?.[1]) {
+  if (!jobId) {
     return {
       success: false,
       error: "Job ID를 추출할 수 없습니다.",
@@ -57,7 +388,7 @@ const extractFirstFeedJobId = (
 
   return {
     success: true,
-    jobId: match[1],
+    jobId,
   };
 };
 
@@ -123,42 +454,6 @@ const collectJobIdsFromCursor = async (
     );
   };
 
-  const getScrollHeight = () => {
-    if (scrollContainer instanceof HTMLElement) {
-      return scrollContainer.scrollHeight;
-    }
-
-    const element =
-      document.scrollingElement ??
-      (document.documentElement instanceof HTMLElement
-        ? document.documentElement
-        : document.body instanceof HTMLElement
-        ? document.body
-        : null);
-
-    return element?.scrollHeight ?? 0;
-  };
-
-  const getScrollTop = () => {
-    if (scrollContainer instanceof HTMLElement) {
-      return scrollContainer.scrollTop;
-    }
-
-    return (
-      window.scrollY ||
-      document.scrollingElement?.scrollTop ||
-      document.documentElement?.scrollTop ||
-      document.body?.scrollTop ||
-      0
-    );
-  };
-
-  const getMaxScrollTop = () => {
-    const viewportHeight = getViewportHeight();
-    const scrollHeight = getScrollHeight();
-    return Math.max(0, scrollHeight - viewportHeight);
-  };
-
   const setScrollTop = (nextTop: number) => {
     if (scrollContainer instanceof HTMLElement) {
       scrollContainer.scrollTop = nextTop;
@@ -167,86 +462,55 @@ const collectJobIdsFromCursor = async (
 
     window.scrollTo({ top: nextTop, behavior: "auto" });
 
-    const element =
-      document.scrollingElement ??
-      (document.documentElement instanceof HTMLElement
-        ? document.documentElement
-        : document.body instanceof HTMLElement
-        ? document.body
-        : null);
+    const element = document.scrollingElement as HTMLElement | null;
 
     if (element) {
       element.scrollTop = nextTop;
     }
   };
 
-  const isAtTop = () => getScrollTop() <= 1;
-
   const isAtBottom = () => {
     if (scrollContainer instanceof HTMLElement) {
-      return (
-        scrollContainer.scrollHeight <= scrollContainer.clientHeight + 2 ||
-        scrollContainer.scrollTop >=
-          scrollContainer.scrollHeight - scrollContainer.clientHeight - 1
-      );
+      const diff =
+        scrollContainer.scrollHeight -
+        (scrollContainer.scrollTop + scrollContainer.clientHeight);
+      return diff <= 2;
     }
 
-    const element =
-      document.scrollingElement ??
-      (document.documentElement instanceof HTMLElement
-        ? document.documentElement
-        : document.body instanceof HTMLElement
-        ? document.body
-        : null);
+    const element = document.scrollingElement as HTMLElement | null;
 
     if (!element) {
       return true;
     }
 
-    const viewportHeight = getViewportHeight();
-    const remaining =
-      element.scrollHeight - (element.scrollTop + viewportHeight);
-    return remaining <= 2;
+    return (
+      element.scrollHeight - (element.scrollTop + getViewportHeight()) <= 2
+    );
   };
 
   const getItems = () => Array.from(feedRoot.querySelectorAll(itemSelector));
 
-  const extractJobIdFromItem = (item: Element) => {
-    const link = item.querySelector(overlaySelector);
-
-    if (!(link instanceof HTMLAnchorElement)) {
-      return null;
-    }
-
-    const href = link.getAttribute("href") ?? "";
-    const match = /\/job\/([^/?#]+)/i.exec(href);
-
-    if (!match?.[1]) {
-      return null;
-    }
-
-    return match[1];
-  };
-
-  const cursorElementExists = () => {
-    if (!shouldFindCursor) {
-      return true;
-    }
-
-    return getItems().some((item) => {
-      const jobId = extractJobIdFromItem(item);
-
-      return (
-        typeof jobId === "string" &&
-        jobId.trim().toLowerCase() === normalisedCursor
-      );
-    });
-  };
-
   const scrollDownStep = () => {
     const viewportHeight = getViewportHeight();
-    const maxTop = getMaxScrollTop();
-    const currentTop = getScrollTop();
+    let currentTop = 0;
+    let maxTop = 0;
+
+    if (scrollContainer instanceof HTMLElement) {
+      currentTop = scrollContainer.scrollTop;
+      maxTop = Math.max(
+        0,
+        scrollContainer.scrollHeight - scrollContainer.clientHeight
+      );
+    } else {
+      const element = document.scrollingElement as HTMLElement | null;
+      currentTop = element?.scrollTop ?? window.scrollY;
+      maxTop = Math.max(
+        0,
+        getViewportHeight()
+          ? document.body.scrollHeight - getViewportHeight()
+          : 0
+      );
+    }
 
     if (maxTop <= 0 || currentTop >= maxTop - 1) {
       return false;
@@ -263,85 +527,15 @@ const collectJobIdsFromCursor = async (
     return true;
   };
 
-  const scrollUpStep = () => {
-    const viewportHeight = getViewportHeight();
-    const currentTop = getScrollTop();
-
-    if (currentTop <= 1) {
-      return false;
-    }
-
-    const delta = Math.max(viewportHeight * 0.9, 240);
-    const nextTop = Math.max(0, currentTop - delta);
-
-    if (Math.abs(currentTop - nextTop) < 1) {
-      setScrollTop(0);
-      return false;
-    }
-
-    setScrollTop(nextTop);
-    return true;
-  };
-
-  if (shouldFindCursor) {
-    let cursorLocated = cursorElementExists();
-    const maxDownAttempts = 180;
-    let attempts = 0;
-    let stagnantCount = 0;
-
-    while (!cursorLocated && attempts < maxDownAttempts) {
-      attempts += 1;
-      const beforeTop = getScrollTop();
-      const beforeItemCount = getItems().length;
-      const moved = scrollDownStep();
-      await waitForSettled();
-      cursorLocated = cursorElementExists();
-
-      const afterTop = getScrollTop();
-      const afterItemCount = getItems().length;
-
-      if (!moved && isAtBottom()) {
-        break;
-      }
-
-      if (
-        Math.abs(afterTop - beforeTop) < 1 &&
-        afterItemCount <= beforeItemCount
-      ) {
-        stagnantCount += 1;
-      } else {
-        stagnantCount = 0;
-      }
-
-      if (stagnantCount >= 3 && isAtBottom()) {
-        break;
-      }
-    }
-
-    if (!cursorLocated) {
-      return {
-        success: false,
-        error: "다운로드 커서에 해당하는 Job ID를 피드에서 찾을 수 없습니다.",
-      };
-    }
-  }
-
-  await waitForSettled();
-
-  let jobQueue: string[] = [];
   const seenJobIds = new Set<string>();
-  const maxUpAttempts = 180;
-  let attempts = 0;
-  let stagnantUpCount = 0;
-  let cursorSeenAtLeastOnce = !shouldFindCursor;
+  const jobQueue: string[] = [];
 
-  const processVisibleItems = () => {
+  const collectVisibleItems = async (stopAtCursor: boolean) => {
     const items = getItems();
-    const passItems: string[] = [];
-    let cursorVisibleInPass = false;
+    let cursorVisible = false;
 
     for (const item of items) {
-      const jobId = extractJobIdFromItem(item);
+      const jobId = await extractJobIdFromFeedItem(item, overlaySelector);
 
       if (!jobId) {
         continue;
@@ -349,8 +543,8 @@ const collectJobIdsFromCursor = async (
 
       const normalisedJobId = jobId.trim().toLowerCase();
 
-      if (shouldFindCursor && normalisedJobId === normalisedCursor) {
-        cursorVisibleInPass = true;
+      if (stopAtCursor && normalisedJobId === normalisedCursor) {
+        cursorVisible = true;
         break;
       }
 
@@ -359,70 +553,61 @@ const collectJobIdsFromCursor = async (
       }
 
       seenJobIds.add(normalisedJobId);
-      passItems.push(jobId);
-    }
-
-    if (passItems.length) {
-      jobQueue = passItems.concat(jobQueue);
+      jobQueue.push(jobId);
     }
 
     return {
-      cursorVisibleInPass,
-      added: passItems.length > 0,
-    };
+      cursorVisible,
+      seenCount: seenJobIds.size,
+    } as const;
   };
 
-  while (attempts < maxUpAttempts) {
-    attempts += 1;
-    const { cursorVisibleInPass, added } = processVisibleItems();
+  const initialCollect = await collectVisibleItems(shouldFindCursor);
+  let cursorLocated = initialCollect.cursorVisible;
 
-    if (cursorVisibleInPass) {
-      cursorSeenAtLeastOnce = true;
+  const maxScrollAttempts = 240;
+  const maxIdleAttempts = 10;
+  let attempts = 0;
+  let idleAttempts = 0;
+  let previousSeenCount = seenJobIds.size;
+
+  while (attempts < maxScrollAttempts) {
+    if (shouldFindCursor && cursorLocated) {
+      break;
     }
 
-    const atTop = isAtTop() || getScrollHeight() <= getViewportHeight() + 2;
+    const moved = scrollDownStep();
+    attempts += 1;
+    await waitForSettled();
 
-    if (atTop) {
-      if (!added) {
+    const { cursorVisible, seenCount } = await collectVisibleItems(
+      shouldFindCursor
+    );
+    cursorLocated = cursorLocated || cursorVisible;
+
+    if (seenCount > previousSeenCount) {
+      idleAttempts = 0;
+      previousSeenCount = seenCount;
+    } else {
+      idleAttempts += 1;
+    }
+
+    if (!moved && isAtBottom()) {
+      if (shouldFindCursor && !cursorLocated) {
         break;
       }
 
-      await waitForSettled();
-      continue;
+      if (!shouldFindCursor) {
+        break;
+      }
     }
 
-    const previousTop = getScrollTop();
-    const previousItemCount = getItems().length;
-    const moved = scrollUpStep();
-    await waitForSettled();
-    const currentTop = getScrollTop();
-    const currentItemCount = getItems().length;
-
-    if (moved) {
-      stagnantUpCount = 0;
-      continue;
-    }
-
-    if (
-      Math.abs(currentTop - previousTop) < 1 &&
-      currentItemCount <= previousItemCount
-    ) {
-      stagnantUpCount += 1;
-    } else {
-      stagnantUpCount = 0;
-    }
-
-    if (!added && stagnantUpCount >= 3) {
+    if (idleAttempts >= maxIdleAttempts) {
       break;
     }
   }
 
-  const finalPass = processVisibleItems();
-  if (finalPass.cursorVisibleInPass) {
-    cursorSeenAtLeastOnce = true;
-  }
-
-  if (shouldFindCursor && !cursorSeenAtLeastOnce) {
+  if (shouldFindCursor && !cursorLocated) {
     return {
       success: false,
       error: "다운로드 커서에 해당하는 Job ID를 피드에서 찾을 수 없습니다.",
@@ -440,7 +625,13 @@ export const getFirstFeedJobId = async (): Promise<string> => {
 
   const [result] = await chrome.scripting.executeScript({
     target: { tabId },
-    func: extractFirstFeedJobId,
+    func: async (
+      rootSelector: string,
+      itemSelector: string,
+      overlaySelector: string
+    ) => {
+      return extractFirstFeedJobId(rootSelector, itemSelector, overlaySelector);
+    },
     args: [FEED_ROOT_SELECTOR, FEED_ITEM_SELECTOR, FEED_ITEM_OVERLAY_SELECTOR],
   });
 
@@ -460,7 +651,19 @@ export const getDownloadQueueFromCursor = async (
 
   const [result] = await chrome.scripting.executeScript({
     target: { tabId },
-    func: collectJobIdsFromCursor,
+    func: async (
+      rootSelector: string,
+      itemSelector: string,
+      overlaySelector: string,
+      cursor: string
+    ) => {
+      return collectJobIdsFromCursor(
+        rootSelector,
+        itemSelector,
+        overlaySelector,
+        cursor
+      );
+    },
     args: [
       FEED_ROOT_SELECTOR,
       FEED_ITEM_SELECTOR,
