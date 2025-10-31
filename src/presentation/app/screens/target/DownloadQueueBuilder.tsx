@@ -239,7 +239,7 @@ export const DownloadQueueBuilder = ({
       ) : null}
 
       {items.length ? (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4">
           {items.map((item, index) => {
             const key = buildItemKey(item);
             const downloadState = downloadStates[key];
@@ -291,7 +291,7 @@ export const DownloadQueueBuilder = ({
                       <img
                         src={previewImage.src}
                         alt={previewImage.alt}
-                        className="h-40 w-full rounded-lg border border-slate-200 object-cover shadow-sm"
+                        className="h-40 w-full rounded-lg border border-slate-200 object-contain shadow-sm"
                         loading="lazy"
                       />
                     ) : (
