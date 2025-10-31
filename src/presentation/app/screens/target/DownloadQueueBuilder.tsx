@@ -59,6 +59,7 @@ export const DownloadQueueBuilder = ({
       }
     >
   >({});
+  const [showThumbnails, setShowThumbnails] = useState(true);
 
   const buildItemKey = useCallback((preview: FeedItemPreview) => {
     return `${preview.index}:${preview.signature ?? "unknown"}`;
@@ -129,7 +130,6 @@ export const DownloadQueueBuilder = ({
           ...prev,
           [key]: {
             status: "success",
-            message: "다운로드 버튼을 클릭했습니다.",
           },
         }));
       } catch (error) {
@@ -167,6 +167,15 @@ export const DownloadQueueBuilder = ({
             피드에서 순서대로 읽어올 아이템 개수를 입력하고 HTML을 확인하세요.
           </p>
         </div>
+        <button
+          type="button"
+          onClick={() => {
+            setShowThumbnails((prev) => !prev);
+          }}
+          className="inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-600 shadow-sm transition hover:border-slate-300 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"
+        >
+          {showThumbnails ? "썸네일 숨기기" : "썸네일 표시"}
+        </button>
       </div>
 
       <div className="flex flex-col gap-4 sm:flex-row sm:items-end">
@@ -230,7 +239,7 @@ export const DownloadQueueBuilder = ({
       ) : null}
 
       {items.length ? (
-        <div className="grid gap-3">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
           {items.map((item, index) => {
             const key = buildItemKey(item);
             const downloadState = downloadStates[key];
@@ -243,46 +252,55 @@ export const DownloadQueueBuilder = ({
             return (
               <div
                 key={`download-queue-item-${key}`}
-                className="rounded-xl border border-slate-200 bg-slate-50 p-4 shadow-sm shadow-slate-200/60"
+                className="flex h-full flex-col rounded-xl border border-slate-200 bg-slate-50 p-4 shadow-sm shadow-slate-200/60"
               >
-                <div className="mb-2 flex items-center justify-between gap-3">
+                <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
                   <span className="text-xs font-semibold text-slate-600">
                     아이템 {index + 1}
                   </span>
-                  <button
-                    className={downloadActionButtonClasses}
-                    type="button"
-                    onClick={() => {
-                      void handleDownloadItem(item);
-                    }}
-                    disabled={isProcessing}
-                  >
-                    {isProcessing ? "실행 중..." : "다운로드 실행"}
-                  </button>
+                  <div className="flex items-center gap-2">
+                    {status === "success" ? (
+                      <span className="inline-flex items-center rounded-full bg-emerald-100 px-2 py-1 text-[11px] font-semibold text-emerald-700">
+                        다운로드 완료됨
+                      </span>
+                    ) : null}
+                    <button
+                      className={downloadActionButtonClasses}
+                      type="button"
+                      onClick={() => {
+                        void handleDownloadItem(item);
+                      }}
+                      disabled={isProcessing}
+                    >
+                      {isProcessing ? "실행 중..." : "다운로드 실행"}
+                    </button>
+                  </div>
                 </div>
                 {message ? (
                   <p
-                    className={`text-xs ${
+                    className={`mb-2 text-xs ${
                       status === "error" ? "text-rose-600" : "text-emerald-600"
                     }`}
                   >
                     {message}
                   </p>
                 ) : null}
-                {previewImage ? (
-                  <div className="mt-3">
-                    <img
-                      src={previewImage.src}
-                      alt={previewImage.alt}
-                      className="h-24 w-auto rounded-lg border border-slate-200 object-cover shadow-sm"
-                      loading="lazy"
-                    />
+                {showThumbnails ? (
+                  <div className="mt-auto pt-3">
+                    {previewImage ? (
+                      <img
+                        src={previewImage.src}
+                        alt={previewImage.alt}
+                        className="h-40 w-full rounded-lg border border-slate-200 object-cover shadow-sm"
+                        loading="lazy"
+                      />
+                    ) : (
+                      <p className="text-[11px] text-slate-500">
+                        이미지 미리보기를 찾지 못했습니다.
+                      </p>
+                    )}
                   </div>
-                ) : (
-                  <p className="mt-3 text-[11px] text-slate-500">
-                    이미지 미리보기를 찾지 못했습니다.
-                  </p>
-                )}
+                ) : null}
               </div>
             );
           })}
