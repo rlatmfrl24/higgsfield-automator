@@ -21,10 +21,12 @@ type FeedItemsScriptResult =
 type TriggerDownloadScriptResult =
   | {
       success: true;
+      html: string;
     }
   | {
       success: false;
       error: string;
+      html?: string;
     };
 
 const collectFeedItemsScript = (
@@ -104,6 +106,9 @@ const triggerFeedItemDownloadScript = async (
   index: number,
   signature: string | null
 ): Promise<TriggerDownloadScriptResult> => {
+  const TARGET_DOWNLOAD_ICON_SIGNATURE =
+    "M12 3C12.2761 3 12.5 3.22386 12.5 3.5V12.7929L15.6464 9.64645C15.8417 9.45118 16.1583 9.45118 16.3536 9.64645C16.5488 9.84171 16.5488 10.1583 16.3536 10.3536L12.3536 14.3536C12.1583 14.5488 11.8417 14.5488 11.6464 14.3536L7.64645 10.3536C7.45118 10.1583 7.45118 9.84171 7.64645 9.64645C7.84171 9.45118 8.15829 9.45118 8.35355 9.64645L11.5 12.7929V3.5C11.5 3.22386 11.7239 3 12 3ZM4 14.5C4.27614 14.5 4.5 14.7239 4.5 15V18C4.5 18.8284 5.17157 19.5 6 19.5H18C18.8284 19.5 19.5 18.8284 19.5 18V15C19.5 14.7239 19.7239 14.5 20 14.5C20.2761 14.5 20.5 14.7239 20.5 15V18C20.5 19.3807 19.3807 20.5 18 20.5H6C4.61929 20.5 3.5 19.3807 3.5 18V15C3.5 14.7239 3.72386 14.5 4 14.5Z";
+
   const extractCardSignature = (card: Element | null | undefined) => {
     if (!card) {
       return null;
@@ -124,92 +129,275 @@ const triggerFeedItemDownloadScript = async (
       window.setTimeout(resolve, ms);
     });
 
-  const simulateHover = (element: Element) => {
-    const hoverEvents: Array<{ type: string; event: Event }> = [];
+  const waitForAnimationFrame = () =>
+    new Promise<void>((resolve) => {
+      window.requestAnimationFrame(() => resolve());
+    });
 
-    try {
-      hoverEvents.push({
-        type: "pointerenter",
-        event: new PointerEvent("pointerenter", {
-          bubbles: true,
-          cancelable: true,
-        }),
-      });
-      hoverEvents.push({
-        type: "pointerover",
-        event: new PointerEvent("pointerover", {
-          bubbles: true,
-          cancelable: true,
-        }),
-      });
-    } catch {
-      // PointerEvent may not be supported; fall back to mouse events only.
+  const serialiseElement = (element: Element) => {
+    if (element instanceof HTMLElement) {
+      return element.outerHTML;
     }
 
-    hoverEvents.push({
-      type: "mouseenter",
-      event: new MouseEvent("mouseenter", {
-        bubbles: true,
-        cancelable: true,
-      }),
-    });
-    hoverEvents.push({
-      type: "mouseover",
-      event: new MouseEvent("mouseover", {
-        bubbles: true,
-        cancelable: true,
-      }),
-    });
-
-    hoverEvents.forEach(({ event }) => {
-      try {
-        element.dispatchEvent(event);
-      } catch {
-        // Ignore dispatch errors to keep the flow resilient.
-      }
-    });
+    try {
+      return new XMLSerializer().serializeToString(element);
+    } catch {
+      return element.textContent ?? "";
+    }
   };
 
-  const findDownloadButton = (item: Element) => {
-    const candidates = Array.from(
-      item.querySelectorAll<HTMLElement | HTMLAnchorElement>(
-        "button, [role='button'], a"
-      )
-    );
+  const createPointerAndMouseEventInits = (element: Element) => {
+    const rect = element.getBoundingClientRect();
 
-    const normalise = (value: string | null | undefined) =>
-      value?.replace(/\s+/g, " ").trim().toLowerCase() ?? "";
+    const clientX = Number.isFinite(rect.left)
+      ? rect.left + Math.max(1, rect.width / 2)
+      : 0;
+    const clientY = Number.isFinite(rect.top)
+      ? rect.top + Math.max(1, rect.height / 2)
+      : 0;
 
-    return (
-      candidates.find((candidate) => {
-        const text = normalise(candidate.textContent);
-        const aria = normalise(candidate.getAttribute("aria-label"));
-        const title = normalise(candidate.getAttribute("title"));
-        const dataLabel = normalise(
-          candidate.getAttribute("data-tooltip") ??
-            candidate.getAttribute("data-title") ??
-            candidate.dataset.action
-        );
+    const baseMouseInit: MouseEventInit = {
+      bubbles: true,
+      cancelable: true,
+      composed: true,
+      clientX,
+      clientY,
+      screenX: window.screenX + clientX,
+      screenY: window.screenY + clientY,
+    };
 
-        if (
-          text.includes("download") ||
-          aria.includes("download") ||
-          title.includes("download") ||
-          dataLabel.includes("download")
-        ) {
-          return true;
+    const pointerInit: PointerEventInit = {
+      ...baseMouseInit,
+      pointerId: 1,
+      pointerType: "mouse",
+    };
+
+    return {
+      pointerInit,
+      mouseInit: baseMouseInit,
+      clientX,
+      clientY,
+    };
+  };
+
+  const simulateHover = async (element: Element | null) => {
+    if (!(element instanceof HTMLElement)) {
+      return false;
+    }
+
+    const { pointerInit, mouseInit } = createPointerAndMouseEventInits(element);
+
+    if (typeof window.PointerEvent === "function") {
+      for (const type of ["pointerover", "pointerenter", "pointermove"]) {
+        try {
+          element.dispatchEvent(new PointerEvent(type, pointerInit));
+        } catch {
+          // ignore
         }
+      }
+    }
 
-        if (candidate.tagName === "A") {
-          const href = normalise(candidate.getAttribute("href"));
-          if (href.includes("download")) {
-            return true;
-          }
-        }
+    for (const type of ["mouseover", "mouseenter", "mousemove"]) {
+      try {
+        element.dispatchEvent(new MouseEvent(type, mouseInit));
+      } catch {
+        // ignore
+      }
+    }
 
-        return false;
-      }) ?? null
-    );
+    try {
+      element.dispatchEvent(
+        new FocusEvent("focus", {
+          bubbles: true,
+          cancelable: true,
+        })
+      );
+    } catch {
+      // ignore
+    }
+
+    if (typeof element.focus === "function") {
+      try {
+        element.focus({ preventScroll: true });
+      } catch {
+        // ignore
+      }
+    }
+
+    await waitForAnimationFrame();
+
+    return element.matches(":hover");
+  };
+
+  const ensureHover = async (element: Element | null) => {
+    if (!element) {
+      return false;
+    }
+
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      if (await simulateHover(element)) {
+        return true;
+      }
+
+      await wait(60);
+    }
+
+    return false;
+  };
+
+  const simulateClick = async (element: Element | null) => {
+    if (!(element instanceof HTMLElement)) {
+      return false;
+    }
+
+    const { pointerInit, mouseInit } = createPointerAndMouseEventInits(element);
+
+    const pointerDownInit: PointerEventInit = {
+      ...pointerInit,
+      buttons: 1,
+      button: 0,
+    };
+
+    const mouseDownInit: MouseEventInit = {
+      ...mouseInit,
+      buttons: 1,
+      button: 0,
+    };
+
+    if (typeof window.PointerEvent === "function") {
+      try {
+        element.dispatchEvent(new PointerEvent("pointerdown", pointerDownInit));
+      } catch {
+        // ignore
+      }
+    }
+
+    try {
+      element.dispatchEvent(new MouseEvent("mousedown", mouseDownInit));
+    } catch {
+      // ignore
+    }
+
+    await wait(30);
+
+    if (typeof window.PointerEvent === "function") {
+      try {
+        element.dispatchEvent(new PointerEvent("pointerup", pointerDownInit));
+      } catch {
+        // ignore
+      }
+    }
+
+    try {
+      element.dispatchEvent(new MouseEvent("mouseup", mouseDownInit));
+    } catch {
+      // ignore
+    }
+
+    try {
+      element.dispatchEvent(new MouseEvent("click", mouseInit));
+    } catch {
+      // ignore
+    }
+
+    try {
+      element.focus({ preventScroll: true });
+    } catch {
+      // ignore
+    }
+
+    await waitForAnimationFrame();
+
+    try {
+      element.click();
+    } catch {
+      // ignore
+    }
+
+    return true;
+  };
+
+  const normaliseSvgPath = (value: string) => value.replace(/\s+/g, " ").trim();
+
+  const matchesSvgSignature = (element: Element | null, signature: string) => {
+    if (!element) {
+      return false;
+    }
+
+    const svg = element.querySelector("svg");
+
+    if (!svg) {
+      return false;
+    }
+
+    const path = svg.querySelector("path");
+
+    if (!path) {
+      return false;
+    }
+
+    const d = normaliseSvgPath(path.getAttribute("d") ?? "");
+    const normalisedSignature = normaliseSvgPath(signature);
+
+    return d === normalisedSignature;
+  };
+
+  const findButtonBySvgSignature = (
+    scope: Element,
+    signature: string
+  ): HTMLElement | null => {
+    const interactiveSelectors = "button, [role='button'], a, [tabindex]";
+    const normalisedSignature = normaliseSvgPath(signature);
+
+    const buttons = scope.querySelectorAll<HTMLElement>(interactiveSelectors);
+
+    for (const button of buttons) {
+      if (matchesSvgSignature(button, normalisedSignature)) {
+        return button;
+      }
+    }
+
+    const paths = scope.querySelectorAll<SVGPathElement>("svg path");
+
+    for (const path of paths) {
+      const d = normaliseSvgPath(path.getAttribute("d") ?? "");
+
+      if (d !== normalisedSignature) {
+        continue;
+      }
+
+      const interactiveAncestor = path.closest(interactiveSelectors);
+
+      if (interactiveAncestor instanceof HTMLElement) {
+        return interactiveAncestor;
+      }
+
+      if (path.parentElement instanceof HTMLElement) {
+        return path.parentElement;
+      }
+    }
+
+    return null;
+  };
+
+  const waitForButtonBySvgSignature = async (
+    scope: Element,
+    signature: string,
+    attempts = 15,
+    delayMs = 120
+  ): Promise<HTMLElement | null> => {
+    for (let attempt = 0; attempt < attempts; attempt += 1) {
+      const button = findButtonBySvgSignature(scope, signature);
+
+      if (button) {
+        return button;
+      }
+
+      await wait(delayMs);
+      await ensureHover(scope);
+    }
+
+    return null;
   };
 
   const feedRoot = document.querySelector(rootSelector);
@@ -254,50 +442,62 @@ const triggerFeedItemDownloadScript = async (
     target.scrollIntoView({ behavior: "smooth", block: "center" });
   }
 
-  simulateHover(target);
-  await wait(60);
+  await ensureHover(target);
+  await wait(120);
 
-  let downloadButton = findDownloadButton(target);
-
-  if (!downloadButton) {
-    simulateHover(target);
-    await wait(120);
-    downloadButton = findDownloadButton(target);
-  }
+  const downloadButton = await waitForButtonBySvgSignature(
+    target,
+    TARGET_DOWNLOAD_ICON_SIGNATURE
+  );
 
   if (!downloadButton) {
     return {
       success: false,
-      error: "다운로드 버튼을 찾지 못했습니다.",
+      error: "지정된 SVG 버튼을 찾지 못했습니다.",
+      html: serialiseElement(target),
     };
   }
 
-  if (downloadButton instanceof HTMLElement) {
-    if ("disabled" in downloadButton) {
-      try {
-        downloadButton.disabled = false;
-      } catch {
-        // Ignore when the element doesn't support disabled assignment.
-      }
+  if ("disabled" in downloadButton) {
+    try {
+      (downloadButton as HTMLButtonElement).disabled = false;
+    } catch {
+      // ignore
     }
+  }
 
-    if (downloadButton.getAttribute("aria-disabled") === "true") {
-      downloadButton.setAttribute("aria-disabled", "false");
+  if (downloadButton.getAttribute("aria-disabled") === "true") {
+    downloadButton.setAttribute("aria-disabled", "false");
+  }
+
+  await ensureHover(downloadButton);
+  await wait(80);
+
+  const hoveredHtml = serialiseElement(target);
+
+  try {
+    const clicked = await simulateClick(downloadButton);
+
+    if (!clicked) {
+      downloadButton.click();
     }
-
-    simulateHover(downloadButton);
-    await wait(30);
-
-    downloadButton.click();
-
+  } catch (error) {
     return {
-      success: true,
+      success: false,
+      error:
+        error instanceof Error
+          ? error.message
+          : "지정된 SVG 버튼 클릭에 실패했습니다.",
+      html: hoveredHtml,
     };
   }
+
+  await waitForAnimationFrame();
+  await wait(120);
 
   return {
-    success: false,
-    error: "다운로드 버튼 요소와 상호작용할 수 없습니다.",
+    success: true,
+    html: hoveredHtml,
   };
 };
 
@@ -326,7 +526,7 @@ export const readFeedItems = async (
 
 export const triggerFeedItemDownload = async (
   preview: FeedItemPreview
-): Promise<void> => {
+): Promise<TriggerDownloadScriptResult> => {
   const tabId = await requireActiveTabId();
 
   const [injectionResult] = await chrome.scripting.executeScript({
@@ -344,9 +544,15 @@ export const triggerFeedItemDownload = async (
     | TriggerDownloadScriptResult
     | undefined;
 
-  if (!result || !result.success) {
+  if (!result) {
+    throw new Error("다운로드 버튼과 상호작용하는 데 실패했습니다.");
+  }
+
+  if (!result.success) {
     throw new Error(
-      result?.error ?? "다운로드 버튼과 상호작용하는 데 실패했습니다."
+      result.error ?? "다운로드 버튼과 상호작용하는 데 실패했습니다."
     );
   }
+
+  return result;
 };

@@ -6,6 +6,35 @@ import {
   type FeedItemPreview,
 } from "@infrastructure/services/feedItems";
 
+const extractPreviewImage = (html: string) => {
+  try {
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(html, "text/html");
+    const img = doc.querySelector("img");
+
+    if (!img) {
+      return null;
+    }
+
+    const src =
+      img.getAttribute("src") ??
+      img.getAttribute("data-src") ??
+      img.getAttribute("srcset")?.split(" ")[0] ??
+      null;
+
+    if (!src) {
+      return null;
+    }
+
+    return {
+      src,
+      alt: img.getAttribute("alt") ?? "",
+    };
+  } catch {
+    return null;
+  }
+};
+
 type DownloadQueueBuilderProps = {
   className?: string;
 };
@@ -70,7 +99,7 @@ export const DownloadQueueBuilder = ({
     } finally {
       setIsLoading(false);
     }
-  }, [readFeedItems, requestedCount]);
+  }, [requestedCount]);
 
   const handleDownloadItem = useCallback(
     async (preview: FeedItemPreview) => {
@@ -84,7 +113,18 @@ export const DownloadQueueBuilder = ({
       }));
 
       try {
-        await triggerFeedItemDownload(preview);
+        const result = await triggerFeedItemDownload(preview);
+
+        if (result.html) {
+          setItems((prev) =>
+            prev.map((item) =>
+              buildItemKey(item) === key
+                ? ({ ...item, html: result.html } as FeedItemPreview)
+                : item
+            )
+          );
+        }
+
         setDownloadStates((prev) => ({
           ...prev,
           [key]: {
@@ -106,7 +146,7 @@ export const DownloadQueueBuilder = ({
         }));
       }
     },
-    [buildItemKey, triggerFeedItemDownload]
+    [buildItemKey]
   );
 
   const buttonClasses =
@@ -171,7 +211,8 @@ export const DownloadQueueBuilder = ({
 
       {meta ? (
         <p className="text-xs text-slate-500">
-          총 {meta.totalCount}개의 피드 아이템 중 {items.length}개를 불러왔습니다.
+          총 {meta.totalCount}개의 피드 아이템 중 {items.length}개를
+          불러왔습니다.
           {items.length < meta.requested
             ? " 요청한 개수보다 적은 아이템만 확인되었습니다."
             : null}
@@ -183,7 +224,9 @@ export const DownloadQueueBuilder = ({
       ) : null}
 
       {isLoading ? (
-        <p className="text-xs text-slate-500">피드에서 아이템을 읽어오는 중입니다...</p>
+        <p className="text-xs text-slate-500">
+          피드에서 아이템을 읽어오는 중입니다...
+        </p>
       ) : null}
 
       {items.length ? (
@@ -193,6 +236,7 @@ export const DownloadQueueBuilder = ({
             const downloadState = downloadStates[key];
             const status = downloadState?.status ?? "idle";
             const message = downloadState?.message;
+            const previewImage = extractPreviewImage(item.html);
 
             const isProcessing = status === "loading";
 
@@ -219,17 +263,26 @@ export const DownloadQueueBuilder = ({
                 {message ? (
                   <p
                     className={`text-xs ${
-                      status === "error"
-                        ? "text-rose-600"
-                        : "text-emerald-600"
+                      status === "error" ? "text-rose-600" : "text-emerald-600"
                     }`}
                   >
                     {message}
                   </p>
                 ) : null}
-                <pre className="mt-2 max-h-64 overflow-auto whitespace-pre-wrap break-words rounded-lg bg-white p-3 text-[11px] leading-relaxed text-slate-700 shadow-inner">
-                  {item.html}
-                </pre>
+                {previewImage ? (
+                  <div className="mt-3">
+                    <img
+                      src={previewImage.src}
+                      alt={previewImage.alt}
+                      className="h-24 w-auto rounded-lg border border-slate-200 object-cover shadow-sm"
+                      loading="lazy"
+                    />
+                  </div>
+                ) : (
+                  <p className="mt-3 text-[11px] text-slate-500">
+                    이미지 미리보기를 찾지 못했습니다.
+                  </p>
+                )}
               </div>
             );
           })}
@@ -240,4 +293,3 @@ export const DownloadQueueBuilder = ({
 };
 
 export default DownloadQueueBuilder;
-
