@@ -160,35 +160,42 @@ export const MultiPromptSetupScreen = ({
   const handleParseAutoPrompts = useCallback(() => {
     setParseError(null);
 
-    const matches = Array.from(
-      autoParserInput.matchAll(/([^\n]*?)\s*--ar\s*([0-9]+:[0-9]+)/gi)
-    );
+    const promptBlocks = autoParserInput
+      .split(/\r?\n\s*-{3,}\s*\r?\n/g)
+      .map((block) => block.trim())
+      .filter(Boolean);
 
-    const parsedEntries = matches
-      .map((match) => {
+    const parsedEntries = promptBlocks.reduce<
+      Array<{ prompt: string; ratio: string }>
+    >((acc, block) => {
+      const matches = Array.from(
+        block.matchAll(/([\s\S]*?)\s*--ar\s*([0-9]+:[0-9]+)/gi)
+      );
+
+      matches.forEach((match) => {
         const prompt = match[1]?.trim() ?? "";
         const ratio = match[2]?.trim() ?? "";
 
         if (!prompt || !ratio) {
-          return null;
+          return;
         }
 
-        return {
+        acc.push({
           prompt,
           ratio: resolveRatio(ratio),
-        };
-      })
-      .filter(
-        (entry): entry is { prompt: string; ratio: string } => entry !== null
-      );
+        });
+      });
+
+      return acc;
+    }, []);
 
     if (!parsedEntries.length) {
       setParseError("추출 가능한 --ar 비율을 찾을 수 없습니다.");
       return;
     }
 
-    setEntries((prev) => {
-      const appendEntries = parsedEntries.map(({ prompt, ratio }) => {
+    setEntries(() =>
+      parsedEntries.map(({ prompt, ratio }) => {
         const entry = createMultiPromptEntry(ratio);
 
         return {
@@ -196,10 +203,8 @@ export const MultiPromptSetupScreen = ({
           prompt,
           ratio,
         };
-      });
-
-      return appendEntries.length ? [...prev, ...appendEntries] : prev;
-    });
+      })
+    );
 
     setAutoParserInput("");
   }, [autoParserInput, resolveRatio, setEntries]);
