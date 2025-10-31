@@ -4,14 +4,17 @@ import CheckingScreen from "@presentation/app/screens/CheckingScreen";
 import OffTargetScreen from "@presentation/app/screens/OffTargetScreen";
 import TargetScreen from "@presentation/app/screens/TargetScreen";
 import MultiPromptSetupScreen from "@presentation/app/screens/MultiPromptSetupScreen";
+import DownloadQueueScreen from "@presentation/app/screens/DownloadQueueScreen";
 import { useActiveTargetPage } from "@presentation/hooks/useActiveTargetPage";
 import { useFormSnapshot } from "@presentation/hooks/useFormSnapshot";
+
+type AppView = "main" | "multi-prompt" | "download-queue";
 
 function App() {
   const { isTargetPage, isChecking, moveToTargetPage } = useActiveTargetPage();
   const { payload, error, isReading, readSnapshot } = useFormSnapshot();
-  const [activeView, setActiveView] = useState<"main" | "multi-prompt">("main");
-  const returnViewRef = useRef<"main">("main");
+  const [activeView, setActiveView] = useState<AppView>("main");
+  const returnViewRef = useRef<AppView>("main");
 
   const handleReadForm = useCallback(() => {
     void (async () => {
@@ -28,21 +31,35 @@ function App() {
   }, [moveToTargetPage, readSnapshot]);
 
   const handleOpenMultiPrompt = useCallback(() => {
-    returnViewRef.current = "main";
+    returnViewRef.current = activeView;
     setActiveView("multi-prompt");
-  }, [returnViewRef]);
+  }, [activeView]);
 
-  const handleCloseMultiPrompt = useCallback(() => {
+  const handleOpenDownloadQueue = useCallback(() => {
+    returnViewRef.current = activeView;
+    setActiveView("download-queue");
+  }, [activeView]);
+
+  const handleCloseStandalone = useCallback(() => {
     setActiveView(returnViewRef.current);
-  }, [returnViewRef]);
+  }, []);
 
   if (activeView === "multi-prompt") {
     return (
       <MultiPromptSetupScreen
-        onBack={handleCloseMultiPrompt}
+        onBack={handleCloseStandalone}
         onNavigateToTarget={moveToTargetPage}
         formReadError={error}
         formPayload={payload}
+      />
+    );
+  }
+
+  if (activeView === "download-queue") {
+    return (
+      <DownloadQueueScreen
+        onBack={handleCloseStandalone}
+        onNavigateToTarget={moveToTargetPage}
       />
     );
   }
@@ -57,6 +74,7 @@ function App() {
         isBusy={isChecking}
         onNavigate={moveToTargetPage}
         onOpenMultiPrompt={handleOpenMultiPrompt}
+        onOpenDownloadQueue={handleOpenDownloadQueue}
       />
     );
   }
@@ -68,6 +86,7 @@ function App() {
       formPayload={payload}
       onReadForm={handleReadForm}
       onOpenStandaloneMultiPrompt={handleOpenMultiPrompt}
+      onOpenDownloadQueue={handleOpenDownloadQueue}
     />
   );
 }
