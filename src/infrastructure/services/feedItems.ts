@@ -29,11 +29,11 @@ type TriggerDownloadScriptResult =
       html?: string;
     };
 
-const collectFeedItemsScript = (
+const collectFeedItemsScript = async (
   rootSelector: string,
   itemSelector: string,
   limit: number
-): FeedItemsScriptResult => {
+): Promise<FeedItemsScriptResult> => {
   const extractCardSignature = (card: Element | null | undefined) => {
     if (!card) {
       return null;
@@ -48,6 +48,28 @@ const collectFeedItemsScript = (
 
     return trimmed.slice(0, 200);
   };
+
+  const wait = (ms: number) =>
+    new Promise<void>((resolve) => {
+      const timer =
+        typeof window.setTimeout === "function"
+          ? window.setTimeout.bind(window)
+          : setTimeout;
+      timer(resolve, ms);
+    });
+
+  const waitForAnimationFrame = () =>
+    new Promise<void>((resolve) => {
+      if (typeof window.requestAnimationFrame === "function") {
+        window.requestAnimationFrame(() => resolve());
+      } else {
+        const timer =
+          typeof window.setTimeout === "function"
+            ? window.setTimeout.bind(window)
+            : setTimeout;
+        timer(() => resolve(), 16);
+      }
+    });
 
   if (!Number.isFinite(limit) || Number.isNaN(limit)) {
     return {
@@ -67,7 +89,180 @@ const collectFeedItemsScript = (
     };
   }
 
-  const feedItems = Array.from(feedRoot.querySelectorAll(itemSelector));
+  const resolveScrollContainer = () => {
+    if (
+      feedRoot instanceof HTMLElement &&
+      feedRoot.scrollHeight > feedRoot.clientHeight + 1
+    ) {
+      return feedRoot;
+    }
+
+    const scrollingElement = document.scrollingElement;
+
+    if (scrollingElement instanceof HTMLElement) {
+      return scrollingElement;
+    }
+
+    if (document.documentElement instanceof HTMLElement) {
+      return document.documentElement;
+    }
+
+    return document.body instanceof HTMLElement ? document.body : null;
+  };
+
+  const scrollContainer = resolveScrollContainer();
+
+  const getViewportHeight = () => {
+    if (scrollContainer instanceof HTMLElement) {
+      return scrollContainer.clientHeight;
+    }
+
+    return (
+      window.innerHeight ||
+      document.documentElement?.clientHeight ||
+      document.body?.clientHeight ||
+      0
+    );
+  };
+
+  const setScrollTop = (nextTop: number) => {
+    if (scrollContainer instanceof HTMLElement) {
+      scrollContainer.scrollTop = nextTop;
+      return;
+    }
+
+    window.scrollTo({ top: nextTop, behavior: "auto" });
+
+    const element = document.scrollingElement as HTMLElement | null;
+
+    if (element) {
+      element.scrollTop = nextTop;
+    }
+  };
+
+  const isAtBottom = () => {
+    if (scrollContainer instanceof HTMLElement) {
+      const diff =
+        scrollContainer.scrollHeight -
+        (scrollContainer.scrollTop + scrollContainer.clientHeight);
+      return diff <= 2;
+    }
+
+    const element = document.scrollingElement as HTMLElement | null;
+
+    if (!element) {
+      return true;
+    }
+
+    return (
+      element.scrollHeight - (element.scrollTop + getViewportHeight()) <= 2
+    );
+  };
+
+  const scrollDownStep = () => {
+    const viewportHeight = getViewportHeight();
+    let currentTop = 0;
+    let maxTop = 0;
+
+    if (scrollContainer instanceof HTMLElement) {
+      currentTop = scrollContainer.scrollTop;
+      maxTop = Math.max(
+        0,
+        scrollContainer.scrollHeight - scrollContainer.clientHeight
+      );
+    } else {
+      const element = document.scrollingElement as HTMLElement | null;
+      currentTop = element?.scrollTop ?? window.scrollY;
+      maxTop = Math.max(
+        0,
+        getViewportHeight()
+          ? document.body.scrollHeight - getViewportHeight()
+          : 0
+      );
+    }
+
+    if (maxTop <= 0 || currentTop >= maxTop - 1) {
+      return false;
+    }
+
+    const delta = Math.max(viewportHeight * 0.9, 240);
+    const nextTop = Math.min(maxTop, currentTop + delta);
+
+    if (Math.abs(nextTop - currentTop) < 1) {
+      return false;
+    }
+
+    setScrollTop(nextTop);
+    return true;
+  };
+
+  const getFeedItems = () =>
+    Array.from(feedRoot.querySelectorAll(itemSelector));
+
+  let feedItems = getFeedItems();
+
+  if (!feedItems.length) {
+    return {
+      success: true,
+      items: [],
+      totalCount: 0,
+    };
+  }
+
+  const waitForSettled = async () => {
+    await waitForAnimationFrame();
+    await wait(120);
+  };
+
+  const ensureSufficientItems = async () => {
+    if (safeLimit <= 0) {
+      return;
+    }
+
+    const maxScrollAttempts = 240;
+    const maxIdleAttempts = 12;
+    let attempts = 0;
+    let idleAttempts = 0;
+    let previousCount = feedItems.length;
+
+    while (feedItems.length < safeLimit && attempts < maxScrollAttempts) {
+      const moved = scrollDownStep();
+      attempts += 1;
+
+      const lastItem = feedItems[feedItems.length - 1];
+
+      if (lastItem instanceof HTMLElement) {
+        try {
+          lastItem.scrollIntoView({ behavior: "smooth", block: "end" });
+        } catch {
+          // ignore
+        }
+      }
+
+      await waitForSettled();
+
+      feedItems = getFeedItems();
+
+      if (feedItems.length > previousCount) {
+        idleAttempts = 0;
+        previousCount = feedItems.length;
+      } else {
+        idleAttempts += 1;
+      }
+
+      if (!moved && isAtBottom()) {
+        break;
+      }
+
+      if (idleAttempts >= maxIdleAttempts) {
+        break;
+      }
+    }
+  };
+
+  await ensureSufficientItems();
+
+  feedItems = getFeedItems();
 
   if (!feedItems.length) {
     return {
