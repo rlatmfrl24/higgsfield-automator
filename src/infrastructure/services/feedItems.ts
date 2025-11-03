@@ -34,9 +34,75 @@ const collectFeedItemsScript = async (
   itemSelector: string,
   limit: number
 ): Promise<FeedItemsScriptResult> => {
+  const normaliseImageUrl = (value: string | null | undefined) => {
+    if (!value) {
+      return null;
+    }
+
+    const firstCandidate = value.split(",")[0]?.trim() ?? value.trim();
+
+    if (!firstCandidate) {
+      return null;
+    }
+
+    const [urlPart] = firstCandidate.split(/\s+/);
+
+    if (!urlPart) {
+      return null;
+    }
+
+    try {
+      const resolved = new URL(urlPart, window.location.origin);
+      const nestedUrl = resolved.searchParams.get("url");
+
+      if (nestedUrl && nestedUrl.trim()) {
+        return nestedUrl.trim();
+      }
+
+      resolved.hash = "";
+
+      return resolved.href;
+    } catch {
+      return urlPart;
+    }
+  };
+
   const extractCardSignature = (card: Element | null | undefined) => {
     if (!card) {
       return null;
+    }
+
+    const element = card as HTMLElement;
+
+    const dataSignature =
+      element.getAttribute("data-id") ??
+      element.getAttribute("data-feed-id") ??
+      element.getAttribute("data-entity-id") ??
+      element.getAttribute("data-sentry-id");
+
+    if (dataSignature && dataSignature.trim()) {
+      return `data:${dataSignature.trim()}`;
+    }
+
+    const image = card.querySelector("img");
+
+    if (image instanceof HTMLImageElement) {
+      const imageCandidates = [
+        image.getAttribute("data-full-src"),
+        image.getAttribute("data-origin-src"),
+        image.getAttribute("data-src"),
+        image.currentSrc,
+        image.getAttribute("src"),
+        image.getAttribute("srcset"),
+      ];
+
+      for (const candidate of imageCandidates) {
+        const normalised = normaliseImageUrl(candidate);
+
+        if (normalised) {
+          return `image:${normalised}`;
+        }
+      }
     }
 
     const text = card.textContent ?? "";
@@ -46,7 +112,7 @@ const collectFeedItemsScript = async (
       return null;
     }
 
-    return trimmed.slice(0, 200);
+    return `text:${trimmed.slice(0, 200)}`;
   };
 
   const wait = (ms: number) =>
@@ -304,9 +370,75 @@ const triggerFeedItemDownloadScript = async (
   const TARGET_DOWNLOAD_ICON_SIGNATURE =
     "M12 3C12.2761 3 12.5 3.22386 12.5 3.5V12.7929L15.6464 9.64645C15.8417 9.45118 16.1583 9.45118 16.3536 9.64645C16.5488 9.84171 16.5488 10.1583 16.3536 10.3536L12.3536 14.3536C12.1583 14.5488 11.8417 14.5488 11.6464 14.3536L7.64645 10.3536C7.45118 10.1583 7.45118 9.84171 7.64645 9.64645C7.84171 9.45118 8.15829 9.45118 8.35355 9.64645L11.5 12.7929V3.5C11.5 3.22386 11.7239 3 12 3ZM4 14.5C4.27614 14.5 4.5 14.7239 4.5 15V18C4.5 18.8284 5.17157 19.5 6 19.5H18C18.8284 19.5 19.5 18.8284 19.5 18V15C19.5 14.7239 19.7239 14.5 20 14.5C20.2761 14.5 20.5 14.7239 20.5 15V18C20.5 19.3807 19.3807 20.5 18 20.5H6C4.61929 20.5 3.5 19.3807 3.5 18V15C3.5 14.7239 3.72386 14.5 4 14.5Z";
 
+  const normaliseImageUrl = (value: string | null | undefined) => {
+    if (!value) {
+      return null;
+    }
+
+    const firstCandidate = value.split(",")[0]?.trim() ?? value.trim();
+
+    if (!firstCandidate) {
+      return null;
+    }
+
+    const [urlPart] = firstCandidate.split(/\s+/);
+
+    if (!urlPart) {
+      return null;
+    }
+
+    try {
+      const resolved = new URL(urlPart, window.location.origin);
+      const nestedUrl = resolved.searchParams.get("url");
+
+      if (nestedUrl && nestedUrl.trim()) {
+        return nestedUrl.trim();
+      }
+
+      resolved.hash = "";
+
+      return resolved.href;
+    } catch {
+      return urlPart;
+    }
+  };
+
   const extractCardSignature = (card: Element | null | undefined) => {
     if (!card) {
       return null;
+    }
+
+    const element = card as HTMLElement;
+
+    const dataSignature =
+      element.getAttribute("data-id") ??
+      element.getAttribute("data-feed-id") ??
+      element.getAttribute("data-entity-id") ??
+      element.getAttribute("data-sentry-id");
+
+    if (dataSignature && dataSignature.trim()) {
+      return `data:${dataSignature.trim()}`;
+    }
+
+    const image = card.querySelector("img");
+
+    if (image instanceof HTMLImageElement) {
+      const imageCandidates = [
+        image.getAttribute("data-full-src"),
+        image.getAttribute("data-origin-src"),
+        image.getAttribute("data-src"),
+        image.currentSrc,
+        image.getAttribute("src"),
+        image.getAttribute("srcset"),
+      ];
+
+      for (const candidate of imageCandidates) {
+        const normalised = normaliseImageUrl(candidate);
+
+        if (normalised) {
+          return `image:${normalised}`;
+        }
+      }
     }
 
     const text = card.textContent ?? "";
@@ -316,7 +448,7 @@ const triggerFeedItemDownloadScript = async (
       return null;
     }
 
-    return trimmed.slice(0, 200);
+    return `text:${trimmed.slice(0, 200)}`;
   };
 
   const wait = (ms: number) =>
@@ -489,8 +621,11 @@ const triggerFeedItemDownloadScript = async (
       // ignore
     }
 
+    let clickAttempted = false;
+
     try {
       element.dispatchEvent(new MouseEvent("click", mouseInit));
+      clickAttempted = true;
     } catch {
       // ignore
     }
@@ -503,13 +638,7 @@ const triggerFeedItemDownloadScript = async (
 
     await waitForAnimationFrame();
 
-    try {
-      element.click();
-    } catch {
-      // ignore
-    }
-
-    return true;
+    return clickAttempted;
   };
 
   const normaliseSvgPath = (value: string) => value.replace(/\s+/g, " ").trim();
@@ -604,7 +733,7 @@ const triggerFeedItemDownloadScript = async (
     };
   }
 
-  const items = Array.from(feedRoot.querySelectorAll(itemSelector));
+  let items = Array.from(feedRoot.querySelectorAll(itemSelector));
 
   const resolveTarget = () => {
     if (Number.isInteger(index) && index >= 0 && index < items.length) {
@@ -624,7 +753,7 @@ const triggerFeedItemDownloadScript = async (
     );
   };
 
-  const target = resolveTarget();
+  let target = resolveTarget();
 
   if (!target) {
     return {
@@ -634,7 +763,52 @@ const triggerFeedItemDownloadScript = async (
   }
 
   if (target instanceof HTMLElement) {
-    target.scrollIntoView({ behavior: "smooth", block: "center" });
+    target.scrollIntoView({
+      behavior: "auto",
+      block: "center",
+      inline: "center",
+    });
+  }
+
+  await waitForAnimationFrame();
+  await wait(80);
+
+  items = Array.from(feedRoot.querySelectorAll(itemSelector));
+
+  const refreshedTarget = resolveTarget();
+
+  if (refreshedTarget) {
+    target = refreshedTarget;
+  }
+
+  if (signature) {
+    const currentSignature = extractCardSignature(target);
+
+    if (currentSignature !== signature) {
+      const fallbackTarget =
+        items.find((item) => extractCardSignature(item) === signature) ?? null;
+
+      if (fallbackTarget) {
+        target = fallbackTarget;
+
+        if (fallbackTarget instanceof HTMLElement) {
+          fallbackTarget.scrollIntoView({
+            behavior: "auto",
+            block: "center",
+            inline: "center",
+          });
+        }
+
+        await waitForAnimationFrame();
+        await wait(60);
+      } else {
+        return {
+          success: false,
+          error: "대상 피드 아이템의 식별 정보가 변경되었습니다.",
+          html: serialiseElement(target),
+        };
+      }
+    }
   }
 
   await ensureHover(target);

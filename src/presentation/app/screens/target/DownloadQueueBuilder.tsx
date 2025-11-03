@@ -60,6 +60,13 @@ export const DownloadQueueBuilder = ({
     >
   >({});
   const [showThumbnails, setShowThumbnails] = useState(true);
+  const [isBulkDownloading, setIsBulkDownloading] = useState(false);
+  const [bulkDownloadMessage, setBulkDownloadMessage] = useState<string | null>(
+    null
+  );
+  const [bulkDownloadError, setBulkDownloadError] = useState<string | null>(
+    null
+  );
 
   const buildItemKey = useCallback((preview: FeedItemPreview) => {
     return `${preview.index}:${preview.signature ?? "unknown"}`;
@@ -73,11 +80,17 @@ export const DownloadQueueBuilder = ({
       setItems([]);
       setDownloadStates({});
       setMeta(null);
+      setIsBulkDownloading(false);
+      setBulkDownloadMessage(null);
+      setBulkDownloadError(null);
       return;
     }
 
     setIsLoading(true);
     setErrorMessage(null);
+    setIsBulkDownloading(false);
+    setBulkDownloadMessage(null);
+    setBulkDownloadError(null);
 
     try {
       const { items: fetchedItems, totalCount } = await readFeedItems(parsed);
@@ -132,6 +145,8 @@ export const DownloadQueueBuilder = ({
             status: "success",
           },
         }));
+
+        return true;
       } catch (error) {
         const message =
           error instanceof Error
@@ -144,15 +159,65 @@ export const DownloadQueueBuilder = ({
             message,
           },
         }));
+
+        return false;
       }
     },
     [buildItemKey]
   );
 
+  const handleDownloadAll = useCallback(async () => {
+    if (!items.length || isBulkDownloading) {
+      return;
+    }
+
+    setIsBulkDownloading(true);
+    setBulkDownloadError(null);
+    setBulkDownloadMessage("일괄 다운로드를 시작합니다...");
+
+    const total = items.length;
+    let successCount = 0;
+    let failureCount = 0;
+
+    try {
+      for (let index = 0; index < total; index += 1) {
+        const item = items[index];
+        setBulkDownloadMessage(
+          `총 ${total}개 중 ${index + 1}번째 아이템을 실행 중입니다.`
+        );
+
+        const success = await handleDownloadItem(item);
+
+        if (success) {
+          successCount += 1;
+        } else {
+          failureCount += 1;
+        }
+      }
+
+      if (failureCount > 0) {
+        setBulkDownloadError(
+          `${failureCount}개의 아이템에서 오류가 발생했습니다. 개별 상태를 확인해 주세요.`
+        );
+      } else {
+        setBulkDownloadError(null);
+      }
+
+      setBulkDownloadMessage(
+        `일괄 다운로드를 완료했습니다. 성공 ${successCount}개 / 총 ${total}개`
+      );
+    } finally {
+      setIsBulkDownloading(false);
+    }
+  }, [handleDownloadItem, isBulkDownloading, items]);
+
   const buttonClasses =
     "inline-flex items-center justify-center rounded-xl bg-gradient-to-r from-emerald-400 to-emerald-500 px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-emerald-200/60 transition hover:from-emerald-500 hover:to-emerald-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 disabled:cursor-not-allowed disabled:opacity-60";
   const downloadActionButtonClasses =
     "inline-flex items-center justify-center rounded-lg border border-emerald-200 bg-white px-3 py-1.5 text-xs font-semibold text-emerald-600 shadow-sm transition hover:border-emerald-300 hover:bg-emerald-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 disabled:cursor-not-allowed disabled:opacity-60";
+  const isAnyItemProcessing =
+    isBulkDownloading ||
+    Object.values(downloadStates).some((state) => state?.status === "loading");
 
   return (
     <section
@@ -167,15 +232,32 @@ export const DownloadQueueBuilder = ({
             피드에서 순서대로 읽어올 아이템 개수를 입력하고 HTML을 확인하세요.
           </p>
         </div>
-        <button
-          type="button"
-          onClick={() => {
-            setShowThumbnails((prev) => !prev);
-          }}
-          className="inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-600 shadow-sm transition hover:border-slate-300 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"
-        >
-          {showThumbnails ? "썸네일 숨기기" : "썸네일 표시"}
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => {
+              setShowThumbnails((prev) => !prev);
+            }}
+            className="inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-600 shadow-sm transition hover:border-slate-300 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"
+          >
+            {showThumbnails ? "썸네일 숨기기" : "썸네일 표시"}
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              void handleDownloadAll();
+            }}
+            className={`${buttonClasses} px-4 py-2 text-xs sm:text-sm`}
+            disabled={
+              !items.length ||
+              isLoading ||
+              isAnyItemProcessing ||
+              isBulkDownloading
+            }
+          >
+            {isBulkDownloading ? "일괄 다운로드 중..." : "모두 다운로드"}
+          </button>
+        </div>
       </div>
 
       <div className="flex flex-col gap-4 sm:flex-row sm:items-end">
@@ -212,7 +294,7 @@ export const DownloadQueueBuilder = ({
           onClick={() => {
             void handleBuildQueue();
           }}
-          disabled={isLoading}
+          disabled={isLoading || isAnyItemProcessing}
         >
           {isLoading ? "피드 읽는 중..." : "다운로드 큐 생성"}
         </button>
@@ -230,6 +312,16 @@ export const DownloadQueueBuilder = ({
 
       {errorMessage ? (
         <p className="text-xs font-semibold text-rose-600">{errorMessage}</p>
+      ) : null}
+
+      {bulkDownloadMessage ? (
+        <p className="text-xs text-emerald-600">{bulkDownloadMessage}</p>
+      ) : null}
+
+      {bulkDownloadError ? (
+        <p className="text-xs font-semibold text-rose-600">
+          {bulkDownloadError}
+        </p>
       ) : null}
 
       {isLoading ? (
@@ -270,7 +362,7 @@ export const DownloadQueueBuilder = ({
                       onClick={() => {
                         void handleDownloadItem(item);
                       }}
-                      disabled={isProcessing}
+                      disabled={isProcessing || isBulkDownloading}
                     >
                       {isProcessing ? "실행 중..." : "다운로드 실행"}
                     </button>
