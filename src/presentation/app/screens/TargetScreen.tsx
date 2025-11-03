@@ -35,6 +35,7 @@ type TargetScreenProps = {
   formPayload: FormSnapshotPayload | null;
   onReadForm: () => void;
   onOpenStandaloneMultiPrompt?: () => void;
+  onOpenDownloadQueue?: () => void;
 };
 
 export const TargetScreen = ({
@@ -43,6 +44,7 @@ export const TargetScreen = ({
   formPayload,
   onReadForm,
   onOpenStandaloneMultiPrompt,
+  onOpenDownloadQueue,
 }: TargetScreenProps) => {
   const announce = useLiveRegion();
   const derived = useMemo(() => deriveFormData(formPayload), [formPayload]);
@@ -559,6 +561,15 @@ export const TargetScreen = ({
               type="button"
             >
               멀티 프롬프트 독립 화면
+            </button>
+          ) : null}
+          {onOpenDownloadQueue ? (
+            <button
+              className={`${secondaryButtonClasses} px-5 py-3 text-sm`}
+              onClick={onOpenDownloadQueue}
+              type="button"
+            >
+              다운로드 큐 화면
             </button>
           ) : null}
         </div>
