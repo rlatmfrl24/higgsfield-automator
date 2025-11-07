@@ -35,7 +35,6 @@ type TargetScreenProps = {
   formPayload: FormSnapshotPayload | null;
   onReadForm: () => void;
   onOpenStandaloneMultiPrompt?: () => void;
-  onOpenDownloadQueue?: () => void;
 };
 
 export const TargetScreen = ({
@@ -44,7 +43,6 @@ export const TargetScreen = ({
   formPayload,
   onReadForm,
   onOpenStandaloneMultiPrompt,
-  onOpenDownloadQueue,
 }: TargetScreenProps) => {
   const announce = useLiveRegion();
   const derived = useMemo(() => deriveFormData(formPayload), [formPayload]);
@@ -507,22 +505,33 @@ export const TargetScreen = ({
     <div className="flex min-h-screen w-full justify-center bg-slate-50 px-4 py-10 text-slate-800 sm:px-6">
       <div className="flex w-full max-w-6xl flex-col gap-8">
         <div className="flex justify-end">
-          <div className="flex flex-col items-end gap-2">
+          <div className="flex items-center gap-3">
             <button
-              aria-pressed={isPrivacyMode}
-              aria-busy={isPrivacyProcessing}
-              className={privacyButtonClasses}
-              disabled={isPrivacyProcessing}
-              onClick={togglePrivacyMode}
+              className={`${baseButtonClasses} border border-blue-200 bg-white px-5 py-3 text-sm text-blue-600 shadow-sm hover:bg-blue-50`}
+              onClick={() => {
+                window.open("https://higgsfield.ai/asset/all", "_blank", "noopener,noreferrer");
+              }}
               type="button"
             >
-              {isPrivacyMode ? "사생활 보호 해제" : "사생활 보호"}
+              다운로드 화면 이동
             </button>
-            {privacyError ? (
-              <p className="text-xs font-semibold text-rose-600">
-                {privacyError}
-              </p>
-            ) : null}
+            <div className="flex flex-col items-end gap-2">
+              <button
+                aria-pressed={isPrivacyMode}
+                aria-busy={isPrivacyProcessing}
+                className={privacyButtonClasses}
+                disabled={isPrivacyProcessing}
+                onClick={togglePrivacyMode}
+                type="button"
+              >
+                {isPrivacyMode ? "사생활 보호 해제" : "사생활 보호"}
+              </button>
+              {privacyError ? (
+                <p className="text-xs font-semibold text-rose-600">
+                  {privacyError}
+                </p>
+              ) : null}
+            </div>
           </div>
         </div>
         <div className="rounded-2xl border border-emerald-100 bg-gradient-to-br from-emerald-50 via-white to-emerald-50 px-8 py-6 text-center shadow-md">
@@ -561,15 +570,6 @@ export const TargetScreen = ({
               type="button"
             >
               멀티 프롬프트 독립 화면
-            </button>
-          ) : null}
-          {onOpenDownloadQueue ? (
-            <button
-              className={`${secondaryButtonClasses} px-5 py-3 text-sm`}
-              onClick={onOpenDownloadQueue}
-              type="button"
-            >
-              다운로드 큐 화면
             </button>
           ) : null}
         </div>
