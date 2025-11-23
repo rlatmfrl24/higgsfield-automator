@@ -9,9 +9,23 @@ type InjectionResult =
       error: string;
     };
 
-export const GENERATION_BUTTON_KEY_PHRASE = "Daily free credits left";
+export const GENERATION_BUTTON_KEY_PHRASE = "Generate Free";
 
 const clickGenerationButton = (keyPhrase: string): InjectionResult => {
+  const submitButton = document.getElementById("hf:image-form-submit");
+  if (submitButton) {
+    submitButton.click();
+    return { success: true };
+  }
+
+  const sentryButton = document.querySelector(
+    "[data-sentry-element='ImageFormSubmit']"
+  );
+  if (sentryButton && sentryButton instanceof HTMLElement) {
+    sentryButton.click();
+    return { success: true };
+  }
+
   const normalise = (value: string | null | undefined) =>
     value?.replace(/\s+/g, " ").trim().toLowerCase();
 

@@ -371,10 +371,30 @@ async function triggerGeneration() {
         }
 
         return (
-          normalise(value)?.includes("daily free credits left".toLowerCase()) ??
+          normalise(value)?.includes("generate free") ??
           false
         );
       };
+
+      const submitButton = document.getElementById("hf:image-form-submit");
+      if (submitButton) {
+        submitButton.click();
+        return {
+          success: true,
+          feedHasUpsell: false,
+        } as const;
+      }
+
+      const sentryButton = document.querySelector(
+        "[data-sentry-element='ImageFormSubmit']"
+      );
+      if (sentryButton && sentryButton instanceof HTMLElement) {
+        sentryButton.click();
+        return {
+          success: true,
+          feedHasUpsell: false,
+        } as const;
+      }
 
       const candidates = Array.from(
         document.querySelectorAll("button, [role='button']")
