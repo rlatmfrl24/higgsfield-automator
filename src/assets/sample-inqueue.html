@@ -1,7 +1,5 @@
 <div
   class="absolute inset-0 p-4 z-20 w-full h-full flex flex-col items-start justify-end text-white transition-all duration-700 ease-out opacity-100 translate-y-0"
-  data-sentry-component="ImageUpsellComponent"
-  data-sentry-source-file="image-upsell.tsx"
 >
   <div
     aria-hidden="true"
@@ -16,8 +14,6 @@
   <div class="flex items-center gap-2">
     <img
       alt="Higgsfield Logo"
-      data-sentry-element="Image"
-      data-sentry-source-file="image-upsell.tsx"
       loading="lazy"
       width="24"
       height="24"
@@ -25,10 +21,9 @@
       data-nimg="1"
       class="rounded-lg"
       srcset="
-        /_next/image?url=%2F_next%2Fstatic%2Fmedia%2Ficon.c305a81a.png&amp;w=32&amp;q=75&amp;dpl=dpl-mgu8eh56 1x,
-        /_next/image?url=%2F_next%2Fstatic%2Fmedia%2Ficon.c305a81a.png&amp;w=48&amp;q=75&amp;dpl=dpl-mgu8eh56 2x
+        /_next/image?url=%2F_next%2Fstatic%2Fmedia%2Ficon.c305a81a.png&amp;w=64&amp;q=75&amp;dpl=dpl-mif47qlw 1x
       "
-      src="/_next/image?url=%2F_next%2Fstatic%2Fmedia%2Ficon.c305a81a.png&amp;w=48&amp;q=75&amp;dpl=dpl-mgu8eh56"
+      src="/_next/image?url=%2F_next%2Fstatic%2Fmedia%2Ficon.c305a81a.png&amp;w=64&amp;q=75&amp;dpl=dpl-mif47qlw"
       style="color: transparent"
     /><span class="text-body-m font-semibold">Try Higgsfield Premium</span>
   </div>
@@ -39,8 +34,6 @@
         height="24"
         viewBox="0 0 24 24"
         class="size-[14px] text-font-brand"
-        data-sentry-element="CheckIcon"
-        data-sentry-source-file="image-upsell.tsx"
       >
         <path
           fill-rule="evenodd"
@@ -56,8 +49,6 @@
         height="24"
         viewBox="0 0 24 24"
         class="size-[14px] text-font-brand"
-        data-sentry-element="CheckIcon"
-        data-sentry-source-file="image-upsell.tsx"
       >
         <path
           fill-rule="evenodd"
@@ -73,8 +64,6 @@
         height="24"
         viewBox="0 0 24 24"
         class="size-[14px] text-font-brand"
-        data-sentry-element="CheckIcon"
-        data-sentry-source-file="image-upsell.tsx"
       >
         <path
           fill-rule="evenodd"
@@ -88,18 +77,9 @@
   <div class="hidden md:block w-full">
     <button
       type="button"
-      class="border max-w-full inline-grid grid-flow-col text-ellipsis overflow-hidden whitespace-nowrap justify-center content-center font-medium transition [&amp;&gt;svg]:h-full focus-visible:ring-2 [.button--pill]:rounded-full h-10 gap-2 text-caption-l not-[.button--pill]:rounded-xl not-[.button--fixed]:px-3 [.button--fixed]:w-10 [&amp;&gt;svg]:size-5 focus-visible:ring-2 bg-primary ring-primary-50 outline-primary-50 text-text-primary-inverted not-disabled:border-primary disabled:bg-neutral-surface-subtle disabled:text-white-32 disabled:border-neutral-12 hover:not-disabled:not-active:bg-primary-80 focus-visible:not-disabled:not-active:bg-primary-80 w-full!"
-      data-sentry-element="Button"
-      data-sentry-source-file="button.tsx"
-      data-sentry-component="Button"
+      class="border max-w-full inline-grid grid-flow-col text-ellipsis overflow-hidden whitespace-nowrap justify-center items-center content-center font-medium transition [&amp;&gt;svg]:h-full focus-visible:ring-2 [.button--pill]:rounded-full h-10 gap-2 text-caption-l font-semibold not-[.button--pill]:rounded-xl not-[.button--fixed]:px-2.5 [.button--fixed]:w-10 [&amp;&gt;svg]:size-5 focus-visible:ring-2 bg-primary ring-primary-50 outline-primary-50 text-text-primary-inverted not-disabled:border-primary disabled:bg-neutral-surface-subtle disabled:text-white-32 disabled:border-neutral-12 hover:not-disabled:not-active:bg-primary-80 focus-visible:not-disabled:not-active:bg-primary-80 w-full!"
     >
-      <svg
-        width="20"
-        height="20"
-        viewBox="0 0 20 20"
-        data-sentry-element="Star2Icon"
-        data-sentry-source-file="image-upsell.tsx"
-      >
+      <svg width="20" height="20" viewBox="0 0 20 20">
         <path
           d="M11.8525 4.21651L11.7221 3.2387C11.6906 3.00226 11.4889 2.82568 11.2504 2.82568C11.0118 2.82568 10.8102 3.00226 10.7786 3.23869L10.6483 4.21651C10.2658 7.0847 8.00939 9.34115 5.14119 9.72358L4.16338 9.85396C3.92694 9.88549 3.75037 10.0872 3.75037 10.3257C3.75037 10.5642 3.92694 10.7659 4.16338 10.7974L5.14119 10.9278C8.00938 11.3102 10.2658 13.5667 10.6483 16.4349L10.7786 17.4127C10.8102 17.6491 11.0118 17.8257 11.2504 17.8257C11.4889 17.8257 11.6906 17.6491 11.7221 17.4127L11.8525 16.4349C12.2349 13.5667 14.4913 11.3102 17.3595 10.9278L18.3374 10.7974C18.5738 10.7659 18.7504 10.5642 18.7504 10.3257C18.7504 10.0872 18.5738 9.88549 18.3374 9.85396L17.3595 9.72358C14.4913 9.34115 12.2349 7.0847 11.8525 4.21651Z"
           fill="currentColor"
@@ -114,18 +94,9 @@
   <div class="md:hidden mt-1 w-full">
     <button
       type="button"
-      class="border max-w-full inline-grid grid-flow-col text-ellipsis overflow-hidden whitespace-nowrap justify-center content-center font-medium transition [&amp;&gt;svg]:h-full focus-visible:ring-2 [.button--pill]:rounded-full h-12 gap-2 text-body-s not-[.button--pill]:rounded-xl not-[.button--fixed]:px-4 [.button--fixed]:w-12 [&amp;&gt;svg]:size-5 focus-visible:ring-2 bg-primary ring-primary-50 outline-primary-50 text-text-primary-inverted not-disabled:border-primary disabled:bg-neutral-surface-subtle disabled:text-white-32 disabled:border-neutral-12 hover:not-disabled:not-active:bg-primary-80 focus-visible:not-disabled:not-active:bg-primary-80 w-full!"
-      data-sentry-element="Button"
-      data-sentry-source-file="button.tsx"
-      data-sentry-component="Button"
+      class="border max-w-full inline-grid grid-flow-col text-ellipsis overflow-hidden whitespace-nowrap justify-center items-center content-center font-medium transition [&amp;&gt;svg]:h-full focus-visible:ring-2 [.button--pill]:rounded-full h-12 gap-2 text-body-s not-[.button--pill]:rounded-xl not-[.button--fixed]:px-4 [.button--fixed]:w-12 [&amp;&gt;svg]:size-5 focus-visible:ring-2 bg-primary ring-primary-50 outline-primary-50 text-text-primary-inverted not-disabled:border-primary disabled:bg-neutral-surface-subtle disabled:text-white-32 disabled:border-neutral-12 hover:not-disabled:not-active:bg-primary-80 focus-visible:not-disabled:not-active:bg-primary-80 w-full!"
     >
-      <svg
-        width="20"
-        height="20"
-        viewBox="0 0 20 20"
-        data-sentry-element="Star2Icon"
-        data-sentry-source-file="image-upsell.tsx"
-      >
+      <svg width="20" height="20" viewBox="0 0 20 20">
         <path
           d="M11.8525 4.21651L11.7221 3.2387C11.6906 3.00226 11.4889 2.82568 11.2504 2.82568C11.0118 2.82568 10.8102 3.00226 10.7786 3.23869L10.6483 4.21651C10.2658 7.0847 8.00939 9.34115 5.14119 9.72358L4.16338 9.85396C3.92694 9.88549 3.75037 10.0872 3.75037 10.3257C3.75037 10.5642 3.92694 10.7659 4.16338 10.7974L5.14119 10.9278C8.00938 11.3102 10.2658 13.5667 10.6483 16.4349L10.7786 17.4127C10.8102 17.6491 11.0118 17.8257 11.2504 17.8257C11.4889 17.8257 11.6906 17.6491 11.7221 17.4127L11.8525 16.4349C12.2349 13.5667 14.4913 11.3102 17.3595 10.9278L18.3374 10.7974C18.5738 10.7659 18.7504 10.5642 18.7504 10.3257C18.7504 10.0872 18.5738 9.88549 18.3374 9.85396L17.3595 9.72358C14.4913 9.34115 12.2349 7.0847 11.8525 4.21651Z"
           fill="currentColor"
