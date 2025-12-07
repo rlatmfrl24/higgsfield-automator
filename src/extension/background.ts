@@ -350,9 +350,15 @@ async function triggerGeneration() {
   const [result] = await chrome.scripting.executeScript({
     target: { tabId: tab.id },
     func: () => {
-      const hasUpsell = Boolean(
-        document.querySelector("[data-sentry-component='ImageUpsellComponent']")
-      );
+      const hasUpsell = Array.from(
+        document.querySelectorAll("span, div, p")
+      ).some((element) => {
+        if (!element.textContent?.includes("Try Higgsfield Premium")) {
+          return false;
+        }
+        const rect = element.getBoundingClientRect();
+        return rect.width > 0 && rect.height > 0;
+      });
 
       if (hasUpsell) {
         return {
@@ -370,11 +376,28 @@ async function triggerGeneration() {
           return false;
         }
 
-        return (
-          normalise(value)?.includes("daily free credits left".toLowerCase()) ??
-          false
-        );
+        return normalise(value)?.includes("generate free") ?? false;
       };
+
+      const submitButton = document.getElementById("hf:image-form-submit");
+      if (submitButton) {
+        submitButton.click();
+        return {
+          success: true,
+          feedHasUpsell: false,
+        } as const;
+      }
+
+      const sentryButton = document.querySelector(
+        "[data-sentry-element='ImageFormSubmit']"
+      );
+      if (sentryButton && sentryButton instanceof HTMLElement) {
+        sentryButton.click();
+        return {
+          success: true,
+          feedHasUpsell: false,
+        } as const;
+      }
 
       const candidates = Array.from(
         document.querySelectorAll("button, [role='button']")
@@ -432,10 +455,16 @@ async function triggerGeneration() {
     | undefined;
 
   if (!response?.success) {
+    if (response?.feedHasUpsell) {
+      return { success: false, feedHasUpsell: true } as const;
+    }
+
     throw new Error(
       response?.error ?? "이미지 생성 버튼을 클릭하지 못했습니다."
     );
   }
+
+  return { success: true, feedHasUpsell: false } as const;
 }
 
 function sanitizeQueue(queue: unknown): QueueEntry[] {
@@ -758,7 +787,15 @@ async function runNextGeneration() {
     }
 
     await applyEntryToForm(entry);
-    await triggerGeneration();
+    const result = await triggerGeneration();
+
+    if (!result.success && result.feedHasUpsell) {
+      await updateState({
+        lastError: "업셀 카드가 감지되어 대기합니다.",
+      });
+      await scheduleRetry();
+      return false;
+    }
 
     const nextCursor = automationState.cursor + 1;
     const nextProcessed = automationState.processedCount + 1;
